@@ -1,0 +1,185 @@
+// components/PlayerStatsTable.tsx
+import { useState } from 'react';
+import { StatCategoryToggle } from './StatCategoryToggle';
+import {
+  type StatCategory,
+  type StatColumn,
+  BATTING_STATS,
+  PITCHING_STATS,
+  formatStatValue,
+} from '../config/statCategories';
+import type { Player, BattingStats, PitchingStats } from '../types';
+import type { DBTeamPlayer } from '../db';
+
+interface PlayerRow {
+  teamPlayer: DBTeamPlayer;
+  player: Player | undefined;
+  stats: BattingStats | PitchingStats | undefined;
+}
+
+interface PlayerStatsTableProps {
+  title: string;
+  type: 'batter' | 'pitcher';
+  players: PlayerRow[];
+  onRemovePlayer: (teamPlayerId: string, playerName: string) => void;
+}
+
+export function PlayerStatsTable({
+  title,
+  type,
+  players,
+  onRemovePlayer,
+}: PlayerStatsTableProps) {
+  const [activeCategory, setActiveCategory] = useState<StatCategory>('standard');
+
+  // Check if any player in this table has Statcast data
+  const anyHasStatcast = players.some((p) => p.player?.hasStatcast);
+
+  // Get the stat columns for the current category and player type
+  const statColumns: StatColumn[] =
+    type === 'batter' ? BATTING_STATS[activeCategory] : PITCHING_STATS[activeCategory];
+
+  // If Statcast is selected but no one has it, show message
+  const showStatcastNA = activeCategory === 'statcast' && !anyHasStatcast;
+
+  if (players.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mb-8">
+      {/* Section Header */}
+      <div className="flex items-center justify-between mb-3 px-2">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          {title}
+          <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+            ({players.length})
+          </span>
+        </h3>
+        <StatCategoryToggle
+          activeCategory={activeCategory}
+          onCategoryChange={setActiveCategory}
+          hasStatcast={anyHasStatcast}
+        />
+      </div>
+
+      {/* Table with horizontal scroll for stats */}
+      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <tr>
+                {/* Fixed columns */}
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-gray-50 dark:bg-gray-800 z-10">
+                  Player
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Pos
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Level
+                </th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Org
+                </th>
+
+                {/* Stat columns - dynamic based on category */}
+                {showStatcastNA ? (
+                  <th
+                    colSpan={7}
+                    className="px-4 py-3 text-center text-xs font-medium text-gray-400 dark:text-gray-500 italic"
+                  >
+                    Statcast data not available
+                  </th>
+                ) : (
+                  statColumns.map((col) => (
+                    <th
+                      key={col.key}
+                      className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap"
+                    >
+                      {col.label}
+                    </th>
+                  ))
+                )}
+
+                {/* Actions column */}
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+              {players.map(({ teamPlayer, player, stats }) => (
+                <tr key={teamPlayer.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                  {/* Fixed columns */}
+                  <td className="px-4 py-3 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900 dark:text-white text-sm">
+                        {player?.name || 'Unknown'}
+                      </span>
+                      {player?.hasStatcast && (
+                        <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded">
+                          SC
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {player?.position || '--'}
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {player?.level || '--'}
+                  </td>
+                  <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {player?.org || '--'}
+                  </td>
+
+                  {/* Stat columns */}
+                  {showStatcastNA ? (
+                    <td colSpan={7} className="px-4 py-3 text-center text-sm text-gray-400 dark:text-gray-500 italic">
+                      N/A
+                    </td>
+                  ) : (
+                    statColumns.map((col) => {
+                      const value = stats?.[col.key as keyof typeof stats] as number | undefined;
+                      // For Statcast, show N/A if the player doesn't have Statcast data
+                      const showNA =
+                        activeCategory === 'statcast' &&
+                        !player?.hasStatcast &&
+                        col.key !== 'PA' &&
+                        col.key !== 'IP';
+
+                      return (
+                        <td
+                          key={col.key}
+                          className="px-3 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white"
+                        >
+                          {showNA ? (
+                            <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
+                          ) : (
+                            formatStatValue(value, col.format)
+                          )}
+                        </td>
+                      );
+                    })
+                  )}
+
+                  {/* Actions */}
+                  <td className="px-3 py-3 whitespace-nowrap text-center">
+                    <button
+                      onClick={() => onRemovePlayer(teamPlayer.id!, player?.name || 'this player')}
+                      className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs font-medium"
+                      title="Remove player from team"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
