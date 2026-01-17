@@ -269,7 +269,7 @@ export function SearchNewPlayerModal() {
         <div className="flex-1 overflow-y-auto p-6">
           {showAddedPlayers ? (
             // Pending players view
-            <div>
+            <div className="space-y-4">
               {pendingPlayers.length === 0 ? (
                 <div className="text-center text-gray-500 dark:text-gray-400 py-8">
                   No pending players. Search and add players to see them here.
@@ -441,24 +441,56 @@ export function SearchNewPlayerModal() {
           ) : (
             // Search view
             <div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name, team, org, or position..."
-                className="input w-full mb-4"
-                autoFocus
-              />
+              {/* Empty index prompt */}
+              {!indexLoading && playerIndex && playerIndex.players.length === 0 ? (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 mb-4">
+                  <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                    Player Index Not Built
+                  </h3>
+                  <p className="text-sm text-blue-800 dark:text-blue-200 mb-4">
+                    The player search index hasn't been built yet. Build it to search through all MiLB players.
+                  </p>
+                  <div className="flex gap-3">
+                    <a
+                      href="https://github.com/comcgovern/MiLB-Tracker/actions/workflows/build-player-index.yml"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-primary text-sm"
+                    >
+                      Build Index via GitHub Action
+                    </a>
+                    <button
+                      onClick={() => setShowManualForm(true)}
+                      className="btn-secondary text-sm"
+                    >
+                      Add Player Manually
+                    </button>
+                  </div>
+                  <div className="mt-4 bg-gray-100 dark:bg-gray-800 rounded p-3 font-mono text-xs">
+                    <p className="text-gray-600 dark:text-gray-400 mb-1">Or run locally:</p>
+                    <pre>python scripts/build_player_index.py</pre>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by name, team, org, or position..."
+                    className="input w-full mb-4"
+                    autoFocus
+                  />
 
-              {indexLoading ? (
-                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                  Loading player index...
-                </div>
-              ) : !searchQuery.trim() ? (
-                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                  Enter a search term to find players
-                </div>
-              ) : filteredPlayers.length === 0 ? (
+                  {indexLoading ? (
+                    <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                      Loading player index...
+                    </div>
+                  ) : !searchQuery.trim() ? (
+                    <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                      Enter a search term to find players
+                    </div>
+                  ) : filteredPlayers.length === 0 ? (
                 <div className="text-center text-gray-500 dark:text-gray-400 py-8">
                   <p>No players found matching "{searchQuery}"</p>
                   <button
@@ -509,6 +541,8 @@ export function SearchNewPlayerModal() {
                     </div>
                   ))}
                 </div>
+              )}
+                </>
               )}
             </div>
           )}
