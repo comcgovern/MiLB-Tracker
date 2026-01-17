@@ -38,3 +38,6 @@ ENV/
 # pybaseball cache
 pybaseball_cache/
 .pybaseball_cache/
+
+# TypeScript build cache
+*.tsbuildinfo
