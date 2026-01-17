@@ -61,18 +61,31 @@ The app will be available at `http://localhost:3000`
 
 ## Usage
 
-### Adding Players
+### First Time Setup
 
-1. Click "Add Player" to open the player selection dialog
-2. Search for players by name
-3. Select players to add to your active team
+When you first open the app:
+
+1. Click **"+ Add Team"** in the tab bar to create your first team
+2. Enter a team name (e.g., "My Dynasty Team")
+3. Optionally add league name and platform details
+4. Check "This is a watchlist" if creating a prospect watchlist
+
+### Adding Players to Your Team
+
+1. Make sure you have a team selected (click on a team tab)
+2. Click **"+ Add Player"** in the controls bar
+3. Search for players by name, organization, position, or level
+4. Check the boxes next to players you want to add
+5. Click **"Add X Players"** to add them to your active team
+
+Players are stored locally in your browser's IndexedDB, so your team rosters persist across sessions.
 
 ### Managing Teams
 
-1. Click "+ Add Team" in the tab bar
-2. Name your team and configure settings
-3. Switch between teams using the tab bar
-4. Use the Watchlist tab for prospects you're monitoring
+- **Switch Teams**: Click on any team tab to view that team's roster
+- **Add Teams**: Click "+ Add Team" in the tab bar
+- **Watchlist**: Create a team and mark it as a watchlist for prospects you're monitoring
+- **Delete Teams**: (Coming soon - use browser DevTools to delete via IndexedDB for now)
 
 ### Viewing Stats
 

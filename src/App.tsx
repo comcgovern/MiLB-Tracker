@@ -4,6 +4,8 @@ import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { Controls } from './components/Controls';
 import { StatsTable } from './components/StatsTable';
+import { AddTeamModal } from './components/AddTeamModal';
+import { AddPlayerModal } from './components/AddPlayerModal';
 
 function App() {
   const { darkMode } = useSettingsStore();
@@ -28,6 +30,10 @@ function App() {
           <StatsTable />
         </div>
       </main>
+
+      {/* Modals */}
+      <AddTeamModal />
+      <AddPlayerModal />
     </div>
   );
 }
