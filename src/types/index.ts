@@ -150,3 +150,21 @@ export interface StatcastData {
   batters: Record<string, any>;
   pitchers: Record<string, any>;
 }
+
+export interface IndexedPlayer {
+  fangraphsId: string;
+  name: string;
+  team: string;
+  org: string;
+  level: string;
+  position: string;
+  type: 'batter' | 'pitcher';
+  inRegistry: boolean;
+}
+
+export interface PlayerIndex {
+  players: IndexedPlayer[];
+  year: number;
+  lastUpdated: string;
+  count: number;
+}

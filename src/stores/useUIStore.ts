@@ -10,6 +10,7 @@ interface UIStore {
   isAddTeamModalOpen: boolean;
   isSettingsModalOpen: boolean;
   isDateRangeModalOpen: boolean;
+  isSearchNewPlayerModalOpen: boolean;
   selectedPlayerIds: string[];
   customDateRange: { start: string; end: string } | null;
 
@@ -24,6 +25,8 @@ interface UIStore {
   closeSettingsModal: () => void;
   openDateRangeModal: () => void;
   closeDateRangeModal: () => void;
+  openSearchNewPlayerModal: () => void;
+  closeSearchNewPlayerModal: () => void;
   setCustomDateRange: (start: string, end: string) => void;
   clearCustomDateRange: () => void;
   togglePlayerSelection: (playerId: string) => void;
@@ -38,6 +41,7 @@ export const useUIStore = create<UIStore>((set) => ({
   isAddTeamModalOpen: false,
   isSettingsModalOpen: false,
   isDateRangeModalOpen: false,
+  isSearchNewPlayerModalOpen: false,
   selectedPlayerIds: [],
   customDateRange: null,
 
@@ -73,6 +77,12 @@ export const useUIStore = create<UIStore>((set) => ({
 
   closeDateRangeModal: () =>
     set({ isDateRangeModalOpen: false }),
+
+  openSearchNewPlayerModal: () =>
+    set({ isSearchNewPlayerModalOpen: true }),
+
+  closeSearchNewPlayerModal: () =>
+    set({ isSearchNewPlayerModalOpen: false }),
 
   setCustomDateRange: (start, end) =>
     set({ customDateRange: { start, end } }),
