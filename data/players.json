@@ -1,0 +1,35 @@
+{
+  "players": [
+    {
+      "fangraphsId": "sa3014981",
+      "name": "Jackson Holliday",
+      "team": "Norfolk Tides",
+      "org": "BAL",
+      "level": "AAA",
+      "position": "SS",
+      "mlbamId": "725586",
+      "hasStatcast": true
+    },
+    {
+      "fangraphsId": "sa3012912",
+      "name": "James Wood",
+      "team": "Rochester Red Wings",
+      "org": "WSH",
+      "level": "AAA",
+      "position": "OF",
+      "mlbamId": "699629",
+      "hasStatcast": true
+    },
+    {
+      "fangraphsId": "sa3010417",
+      "name": "Marcelo Mayer",
+      "team": "Portland Sea Dogs",
+      "org": "BOS",
+      "level": "AA",
+      "position": "SS",
+      "mlbamId": "691958",
+      "hasStatcast": false
+    }
+  ],
+  "lastUpdated": "2026-01-17T12:00:00Z"
+}
