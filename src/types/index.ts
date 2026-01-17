@@ -112,6 +112,8 @@ export interface PlayerStatsData {
   type: 'batter' | 'pitcher';
   season: BattingStats | PitchingStats;
   splits: {
+    yesterday?: BattingStats | PitchingStats;
+    today?: BattingStats | PitchingStats;
     last7?: BattingStats | PitchingStats;
     last14?: BattingStats | PitchingStats;
     last30?: BattingStats | PitchingStats;

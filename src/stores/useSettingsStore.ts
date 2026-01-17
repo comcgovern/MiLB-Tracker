@@ -18,7 +18,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
       darkMode: false,
-      defaultSplit: 'season',
+      defaultSplit: 'yesterday',
       autoRefreshInterval: 60,
       selectedCategories: ['dashboard', 'standard', 'advanced'],
 

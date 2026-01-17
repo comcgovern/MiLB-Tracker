@@ -1,33 +1,43 @@
 {
   "players": [
     {
-      "fangraphsId": "sa3014981",
-      "name": "Jackson Holliday",
-      "team": "Norfolk Tides",
-      "org": "BAL",
-      "level": "AAA",
-      "position": "SS",
-      "mlbamId": "725586",
-      "hasStatcast": true
-    },
-    {
-      "fangraphsId": "sa3012912",
-      "name": "James Wood",
-      "team": "Rochester Red Wings",
-      "org": "WSH",
-      "level": "AAA",
+      "fangraphsId": "sa3021456",
+      "name": "Konnor Griffin",
+      "team": "Pittsburgh Pirates",
+      "org": "PIT",
+      "level": "A+",
       "position": "OF",
-      "mlbamId": "699629",
+      "mlbamId": "745821",
+      "hasStatcast": false
+    },
+    {
+      "fangraphsId": "sa3019847",
+      "name": "Kevin McGonigle",
+      "team": "Midland RockHounds",
+      "org": "OAK",
+      "level": "AA",
+      "position": "C",
+      "mlbamId": "743692",
+      "hasStatcast": false
+    },
+    {
+      "fangraphsId": "sa3018234",
+      "name": "Trey Gibson",
+      "team": "Columbus Clippers",
+      "org": "CLE",
+      "level": "AAA",
+      "position": "RHP",
+      "mlbamId": "742158",
       "hasStatcast": true
     },
     {
-      "fangraphsId": "sa3010417",
-      "name": "Marcelo Mayer",
-      "team": "Portland Sea Dogs",
-      "org": "BOS",
+      "fangraphsId": "sa3015678",
+      "name": "Andrew Painter",
+      "team": "Reading Fightin Phils",
+      "org": "PHI",
       "level": "AA",
-      "position": "SS",
-      "mlbamId": "691958",
+      "position": "RHP",
+      "mlbamId": "739547",
       "hasStatcast": false
     }
   ],

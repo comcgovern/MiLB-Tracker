@@ -3,7 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
-import type { PlayersRegistry, StatsFile, BattingStats } from '../types';
+import { useTeamPlayers } from '../hooks/useTeamPlayers';
+import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats } from '../types';
 
 async function fetchPlayers(): Promise<PlayersRegistry> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
@@ -21,6 +22,7 @@ async function fetchStats(): Promise<StatsFile> {
 
 export function StatsTable() {
   const { activeTeamId, activeSplit } = useUIStore();
+  const { removePlayerFromTeam } = useTeamPlayers(activeTeamId);
 
   // Fetch team players from IndexedDB
   const teamPlayers = useLiveQuery(
@@ -39,6 +41,12 @@ export function StatsTable() {
     queryKey: ['stats', '2025'],
     queryFn: fetchStats,
   });
+
+  const handleRemovePlayer = async (teamPlayerId: string, playerName: string) => {
+    if (confirm(`Remove ${playerName} from this team?`)) {
+      await removePlayerFromTeam(teamPlayerId);
+    }
+  };
 
   if (!teamPlayers || teamPlayers.length === 0) {
     return (
@@ -59,28 +67,31 @@ export function StatsTable() {
               Player
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Pos
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Level
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Org
             </th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              PA
+              Stat 1
             </th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              AVG
+              Stat 2
             </th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              OBP
+              Stat 3
             </th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              SLG
+              Stat 4
             </th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              HR
+              Stat 5
             </th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              wRC+
+            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Actions
             </th>
           </tr>
         </thead>
@@ -90,14 +101,16 @@ export function StatsTable() {
             const playerStats = statsData?.[tp.playerId];
 
             // Get stats based on active split
-            let stats: BattingStats | undefined;
+            let stats: BattingStats | PitchingStats | undefined;
             if (activeSplit === 'season') {
-              stats = playerStats?.season as BattingStats | undefined;
-            } else if (activeSplit === 'last7' || activeSplit === 'last14' || activeSplit === 'last30') {
-              stats = playerStats?.splits?.[activeSplit] as BattingStats | undefined;
+              stats = playerStats?.season;
+            } else if (activeSplit === 'yesterday' || activeSplit === 'today' || activeSplit === 'last7' || activeSplit === 'last14' || activeSplit === 'last30') {
+              stats = playerStats?.splits?.[activeSplit];
             }
-            // For 'today' and 'yesterday', we'd need to implement game log filtering
-            // For now, they will show undefined stats
+
+            const isBatter = playerStats?.type === 'batter';
+            const batterStats = stats as BattingStats | undefined;
+            const pitcherStats = stats as PitchingStats | undefined;
 
             return (
               <tr key={tp.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
@@ -114,28 +127,72 @@ export function StatsTable() {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                  {player?.position || '--'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {player?.level || '--'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {player?.org || '--'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
-                  {stats?.PA || '--'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
-                  {stats?.AVG?.toFixed(3) || '--'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
-                  {stats?.OBP?.toFixed(3) || '--'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
-                  {stats?.SLG?.toFixed(3) || '--'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
-                  {stats?.HR || '--'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
-                  {stats?.['wRC+'] || '--'}
+
+                {/* Dynamic stats based on player type */}
+                {isBatter ? (
+                  <>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">PA</div>
+                      {batterStats?.PA || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">AVG</div>
+                      {batterStats?.AVG?.toFixed(3) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">OBP</div>
+                      {batterStats?.OBP?.toFixed(3) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">SLG</div>
+                      {batterStats?.SLG?.toFixed(3) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">HR</div>
+                      {batterStats?.HR || '--'}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">IP</div>
+                      {pitcherStats?.IP?.toFixed(1) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">ERA</div>
+                      {pitcherStats?.ERA?.toFixed(2) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">WHIP</div>
+                      {pitcherStats?.WHIP?.toFixed(2) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">K/9</div>
+                      {pitcherStats?.['K/9']?.toFixed(1) || '--'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">SO</div>
+                      {pitcherStats?.SO || '--'}
+                    </td>
+                  </>
+                )}
+
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <button
+                    onClick={() => handleRemovePlayer(tp.id!, player?.name || 'this player')}
+                    className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
+                    title="Remove player from team"
+                  >
+                    Remove
+                  </button>
                 </td>
               </tr>
             );
