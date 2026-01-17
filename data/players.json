@@ -1,45 +1,4 @@
 {
-  "players": [
-    {
-      "fangraphsId": "sa3021456",
-      "name": "Konnor Griffin",
-      "team": "Pittsburgh Pirates",
-      "org": "PIT",
-      "level": "A+",
-      "position": "OF",
-      "mlbamId": "745821",
-      "hasStatcast": false
-    },
-    {
-      "fangraphsId": "sa3019847",
-      "name": "Kevin McGonigle",
-      "team": "Midland RockHounds",
-      "org": "OAK",
-      "level": "AA",
-      "position": "C",
-      "mlbamId": "743692",
-      "hasStatcast": false
-    },
-    {
-      "fangraphsId": "sa3018234",
-      "name": "Trey Gibson",
-      "team": "Columbus Clippers",
-      "org": "CLE",
-      "level": "AAA",
-      "position": "RHP",
-      "mlbamId": "742158",
-      "hasStatcast": true
-    },
-    {
-      "fangraphsId": "sa3015678",
-      "name": "Andrew Painter",
-      "team": "Reading Fightin Phils",
-      "org": "PHI",
-      "level": "AA",
-      "position": "RHP",
-      "mlbamId": "739547",
-      "hasStatcast": false
-    }
-  ],
+  "players": [],
   "lastUpdated": "2026-01-17T12:00:00Z"
 }
