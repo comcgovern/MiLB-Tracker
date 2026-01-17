@@ -13,7 +13,7 @@ async function fetchPlayers(): Promise<PlayersRegistry> {
 }
 
 export function AddPlayerModal() {
-  const { isAddPlayerModalOpen, closeAddPlayerModal, activeTeamId } = useUIStore();
+  const { isAddPlayerModalOpen, closeAddPlayerModal, activeTeamId, openSearchNewPlayerModal } = useUIStore();
   const { teamPlayers, addPlayerToTeam } = useTeamPlayers(activeTeamId);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -156,6 +156,23 @@ export function AddPlayerModal() {
               {error}
             </div>
           )}
+
+          {/* Link to add new player to registry */}
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              Can't find a player?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  closeAddPlayerModal();
+                  openSearchNewPlayerModal();
+                }}
+                className="text-primary-600 dark:text-primary-400 hover:underline font-medium"
+              >
+                Add a new player to the registry
+              </button>
+            </span>
+          </div>
         </div>
 
         {/* Player List */}

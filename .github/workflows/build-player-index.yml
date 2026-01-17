@@ -1,0 +1,46 @@
+name: Build Player Index
+
+on:
+  schedule:
+    # Run weekly on Sunday at 6 AM UTC
+    - cron: '0 6 * * 0'
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Season year (default: current year)'
+        required: false
+        type: string
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Build player index
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          if [ -z "$YEAR" ]; then
+            python scripts/build_player_index.py
+          else
+            python scripts/build_player_index.py --year "$YEAR"
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/player-index.json
+          git diff --staged --quiet || git commit -m "Update player index"
+          git push
