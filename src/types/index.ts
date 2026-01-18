@@ -1,8 +1,8 @@
 // types/index.ts
 
 export interface Player {
-  fangraphsId: string;
-  mlbamId?: string;
+  mlbId: string;  // Primary identifier (MLB Stats API ID)
+  fangraphsId?: string;  // Legacy/optional FanGraphs ID
   name: string;
   team: string;
   org: string;
@@ -12,6 +12,11 @@ export interface Player {
   throws?: 'L' | 'R';
   age?: number;
   hasStatcast: boolean;
+}
+
+// Helper to get the primary ID from a player object (supports both new and legacy)
+export function getPlayerId(player: Player | IndexedPlayer): string {
+  return player.mlbId || (player as any).fangraphsId || '';
 }
 
 export interface Team {
@@ -28,7 +33,7 @@ export interface Team {
 export interface TeamPlayer {
   id: string;
   teamId: string;
-  playerId: string; // fangraphsId
+  playerId: string; // mlbId (or fangraphsId for legacy data)
   userNotes?: string;
   addedAt: Date;
 }
@@ -48,6 +53,10 @@ export interface BattingStats {
   SO?: number;
   SB?: number;
   CS?: number;
+  HBP?: number;
+  SF?: number;
+  SH?: number;
+  GDP?: number;
 
   // Rate
   AVG?: number;
@@ -83,6 +92,8 @@ export interface PitchingStats {
   W?: number;
   L?: number;
   SV?: number;
+  HLD?: number;
+  BS?: number;
   IP?: number;
   H?: number;
   R?: number;
@@ -90,12 +101,15 @@ export interface PitchingStats {
   HR?: number;
   BB?: number;
   SO?: number;
+  HBP?: number;
 
   // Rate
   ERA?: number;
   WHIP?: number;
   'K/9'?: number;
   'BB/9'?: number;
+  'HR/9'?: number;
+  'K/BB'?: number;
   'K%'?: number;
   'BB%'?: number;
   FIP?: number;
@@ -108,25 +122,42 @@ export interface PitchingStats {
   'Whiff%'?: number;
 }
 
-export interface PlayerStatsData {
-  type: 'batter' | 'pitcher';
-  season: BattingStats | PitchingStats;
-  splits: {
-    yesterday?: BattingStats | PitchingStats;
-    today?: BattingStats | PitchingStats;
-    last7?: BattingStats | PitchingStats;
-    last14?: BattingStats | PitchingStats;
-    last30?: BattingStats | PitchingStats;
-  };
-  games: GameLog[];
+export interface GameLogEntry {
+  date: string;
+  gameId?: number;
+  opponent?: string;
+  isHome?: boolean;
+  stats: BattingStats | PitchingStats;
 }
 
-export interface GameLog {
-  Date: string;
-  Team: string;
-  Opp: string;
-  // ... varies by batter/pitcher
-  [key: string]: any;
+// Stats data format from Python scripts
+export interface PlayerStatsData {
+  playerId: string;
+  season: number;
+  lastUpdated: string;
+  type: 'batter' | 'pitcher';
+
+  // Batting data (if batter)
+  batting?: BattingStats;
+  battingSplits?: {
+    yesterday?: BattingStats;
+    today?: BattingStats;
+    last7?: BattingStats;
+    last14?: BattingStats;
+    last30?: BattingStats;
+  };
+  battingGameLog?: GameLogEntry[];
+
+  // Pitching data (if pitcher)
+  pitching?: PitchingStats;
+  pitchingSplits?: {
+    yesterday?: PitchingStats;
+    today?: PitchingStats;
+    last7?: PitchingStats;
+    last14?: PitchingStats;
+    last30?: PitchingStats;
+  };
+  pitchingGameLog?: GameLogEntry[];
 }
 
 export type Split = 'season' | 'last7' | 'last14' | 'last30' | 'today' | 'yesterday';
@@ -147,12 +178,14 @@ export interface MetaData {
 
 export interface StatcastData {
   lastUpdated: string;
-  batters: Record<string, any>;
-  pitchers: Record<string, any>;
+  year: number;
+  players: Record<string, any>;
+  note?: string;
 }
 
 export interface IndexedPlayer {
-  fangraphsId: string;
+  mlbId: string;  // Primary identifier
+  fangraphsId?: string;  // Legacy/optional
   name: string;
   team: string;
   org: string;
@@ -165,6 +198,7 @@ export interface IndexedPlayer {
 export interface PlayerIndex {
   players: IndexedPlayer[];
   year: number;
+  requestedYear?: number;
   lastUpdated: string;
   count: number;
 }
