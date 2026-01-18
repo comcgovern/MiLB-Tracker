@@ -13,8 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import pandas as pd
-import pybaseball as pyb
+from mlbstatsapi import Mlb
 
 # Configure logging
 logging.basicConfig(
@@ -80,30 +79,32 @@ def save_players(data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
-def lookup_player_info(name: str) -> Optional[dict]:
-    """Look up player info by name using pybaseball."""
-    parts = name.strip().split()
-    if len(parts) >= 2:
-        first = parts[0]
-        last = ' '.join(parts[1:])
-    else:
-        first = None
-        last = name
-
+def lookup_player_info(mlb: Mlb, name: str) -> Optional[dict]:
+    """Look up player info by name using MLB Stats API."""
     try:
-        if first:
-            df = pyb.playerid_lookup(last, first, fuzzy=True)
-        else:
-            df = pyb.playerid_lookup(last, fuzzy=True)
+        player_ids = mlb.get_people_id(name)
 
-        if df is not None and not df.empty:
-            # Return the first match
-            row = df.iloc[0]
-            return {
-                'name': f"{row.get('name_first', '')} {row.get('name_last', '')}".strip(),
-                'mlbamId': str(int(row.get('key_mlbam'))) if pd.notna(row.get('key_mlbam')) else None,
-                'fangraphsId': str(int(row.get('key_fangraphs'))) if pd.notna(row.get('key_fangraphs')) else None,
-            }
+        if player_ids:
+            # Get detailed info for the first match
+            player_id = player_ids[0]
+            person = mlb.get_person(player_id)
+
+            if person:
+                result = {
+                    'mlbId': str(player_id),
+                    'name': person.fullname if hasattr(person, 'fullname') else name,
+                }
+
+                # Get position
+                if hasattr(person, 'primaryposition') and person.primaryposition:
+                    result['position'] = person.primaryposition.abbreviation or 'UTIL'
+
+                # Get current team
+                if hasattr(person, 'currentteam') and person.currentteam:
+                    result['team'] = person.currentteam.name or ''
+
+                return result
+
     except Exception as e:
         logger.warning(f"Player lookup failed: {e}")
 
@@ -136,7 +137,6 @@ def determine_level_from_team(team_name: str) -> str:
 
 def extract_org_from_team(team_name: str) -> str:
     """Try to extract the MLB org abbreviation from team name."""
-    # This is a simplified mapping - in practice you might need a more comprehensive one
     team_lower = team_name.lower()
 
     # Direct team-to-org mappings (common MiLB teams)
@@ -180,13 +180,13 @@ def extract_org_from_team(team_name: str) -> str:
 
 
 def add_player(
-    fangraphs_id: str = None,
+    mlb: Mlb,
+    mlb_id: str = None,
     name: str = None,
     team: str = None,
     org: str = None,
     level: str = None,
     position: str = None,
-    mlbam_id: str = None,
     lookup: bool = False,
     fetch_stats: bool = False,
     year: int = None
@@ -195,13 +195,13 @@ def add_player(
     Add a player to the registry.
 
     Args:
-        fangraphs_id: FanGraphs player ID (required if not using lookup)
+        mlb: MLB API client
+        mlb_id: MLB player ID (required if not using lookup)
         name: Player name (required)
         team: Team name
         org: MLB organization abbreviation (e.g., 'PIT')
         level: MiLB level ('AAA', 'AA', 'A+', 'A', 'CPX')
         position: Player position
-        mlbam_id: MLB Advanced Media ID
         lookup: Whether to look up player info from name
         fetch_stats: Whether to fetch stats after adding
         year: Season year for stats
@@ -212,25 +212,24 @@ def add_player(
     if year is None:
         year = datetime.now().year
 
-    # Enable pybaseball caching
-    pyb.cache.enable()
-
     # If lookup is requested, try to find player info
-    if lookup and name and not fangraphs_id:
+    if lookup and name and not mlb_id:
         logger.info(f"Looking up player info for: {name}")
-        player_info = lookup_player_info(name)
+        player_info = lookup_player_info(mlb, name)
         if player_info:
             logger.info(f"Found player: {player_info}")
-            if not fangraphs_id:
-                fangraphs_id = player_info.get('fangraphsId')
-            if not mlbam_id:
-                mlbam_id = player_info.get('mlbamId')
+            if not mlb_id:
+                mlb_id = player_info.get('mlbId')
             if not name or name == player_info.get('name', '').split()[0]:
                 name = player_info.get('name')
+            if not position:
+                position = player_info.get('position')
+            if not team:
+                team = player_info.get('team')
 
     # Validate required fields
-    if not fangraphs_id:
-        raise ValueError("fangraphs_id is required (or use --lookup with a name)")
+    if not mlb_id:
+        raise ValueError("mlb_id is required (or use --lookup with a name)")
     if not name:
         raise ValueError("name is required")
 
@@ -238,13 +237,19 @@ def add_player(
     registry = load_players()
 
     # Check if player already exists
-    existing_ids = {p['fangraphsId'] for p in registry['players']}
-    if fangraphs_id in existing_ids:
-        logger.warning(f"Player {fangraphs_id} already exists in registry")
+    existing_ids = set()
+    for p in registry['players']:
+        if 'mlbId' in p:
+            existing_ids.add(p['mlbId'])
+        if 'fangraphsId' in p:
+            existing_ids.add(p['fangraphsId'])
+
+    if mlb_id in existing_ids:
+        logger.warning(f"Player {mlb_id} already exists in registry")
         for p in registry['players']:
-            if p['fangraphsId'] == fangraphs_id:
+            if p.get('mlbId') == mlb_id or p.get('fangraphsId') == mlb_id:
                 return p
-        raise ValueError(f"Player {fangraphs_id} exists but couldn't be found")
+        raise ValueError(f"Player {mlb_id} exists but couldn't be found")
 
     # Determine level if not provided
     if not level and team:
@@ -258,7 +263,7 @@ def add_player(
 
     # Build player record
     player = {
-        'fangraphsId': fangraphs_id,
+        'mlbId': mlb_id,
         'name': name,
         'team': team or 'Unknown',
         'org': org or 'UNK',
@@ -267,56 +272,60 @@ def add_player(
         'hasStatcast': False,
     }
 
-    if mlbam_id:
-        player['mlbamId'] = mlbam_id
-
     # Add to registry
     registry['players'].append(player)
     save_players(registry)
-    logger.info(f"Added player to registry: {player['name']} ({player['fangraphsId']})")
+    logger.info(f"Added player to registry: {player['name']} ({player['mlbId']})")
 
     # Fetch stats if requested
     if fetch_stats:
-        logger.info(f"Fetching stats for {player['fangraphsId']}...")
-        from fetch_stats import fetch_player, save_game_logs
+        logger.info(f"Fetching stats for {player['mlbId']}...")
+        try:
+            from fetch_stats import fetch_player_stats, save_game_logs
 
-        stats = fetch_player(fangraphs_id, year)
-        if stats:
-            # Save to stats file
-            stats_file = STATS_DIR / f'{year}.json'
-            STATS_DIR.mkdir(parents=True, exist_ok=True)
+            stats = fetch_player_stats(mlb, int(mlb_id), year)
+            if stats:
+                # Save to stats file
+                stats_file = STATS_DIR / f'{year}.json'
+                STATS_DIR.mkdir(parents=True, exist_ok=True)
 
-            all_stats = {}
-            if stats_file.exists():
-                with open(stats_file) as f:
-                    all_stats = json.load(f)
+                all_stats = {}
+                if stats_file.exists():
+                    with open(stats_file) as f:
+                        all_stats = json.load(f)
 
-            all_stats[fangraphs_id] = stats
-            with open(stats_file, 'w') as f:
-                json.dump(all_stats, f, indent=2, default=str)
+                all_stats[mlb_id] = stats
+                with open(stats_file, 'w') as f:
+                    json.dump(all_stats, f, indent=2, default=str)
 
-            # Save game logs
-            save_game_logs(fangraphs_id, stats.get('games', []))
-            logger.info(f"Fetched and saved stats for {player['name']}")
-        else:
-            logger.warning(f"Could not fetch stats for {player['name']}")
+                # Save game logs
+                if 'battingGameLog' in stats:
+                    save_game_logs(mlb_id, stats['battingGameLog'], 'batting')
+                if 'pitchingGameLog' in stats:
+                    save_game_logs(mlb_id, stats['pitchingGameLog'], 'pitching')
+
+                logger.info(f"Fetched and saved stats for {player['name']}")
+            else:
+                logger.warning(f"Could not fetch stats for {player['name']}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch stats: {e}")
 
     return player
 
 
-def add_players_bulk(players_data: list[dict], fetch_stats: bool = False, year: int = None) -> list[dict]:
+def add_players_bulk(mlb: Mlb, players_data: list[dict], fetch_stats: bool = False, year: int = None) -> list[dict]:
     """Add multiple players at once."""
     added = []
     for player_data in players_data:
         try:
             player = add_player(
-                fangraphs_id=player_data.get('fangraphsId'),
+                mlb,
+                mlb_id=player_data.get('mlbId') or player_data.get('fangraphsId'),
                 name=player_data.get('name'),
                 team=player_data.get('team'),
                 org=player_data.get('org'),
                 level=player_data.get('level'),
                 position=player_data.get('position'),
-                mlbam_id=player_data.get('mlbamId'),
                 fetch_stats=fetch_stats,
                 year=year
             )
@@ -333,15 +342,14 @@ def main():
     parser = argparse.ArgumentParser(description='Add a player to the MiLB Tracker registry')
 
     # Single player mode
-    parser.add_argument('--id', type=str, dest='fangraphs_id',
-                        help='FanGraphs player ID')
+    parser.add_argument('--id', type=str, dest='mlb_id',
+                        help='MLB player ID')
     parser.add_argument('--name', type=str, help='Player name')
     parser.add_argument('--team', type=str, help='Team name')
     parser.add_argument('--org', type=str, help='MLB organization (e.g., PIT)')
     parser.add_argument('--level', type=str, choices=['AAA', 'AA', 'A+', 'A', 'CPX'],
                         help='MiLB level')
     parser.add_argument('--position', type=str, help='Player position')
-    parser.add_argument('--mlbam-id', type=str, help='MLB Advanced Media ID')
     parser.add_argument('--lookup', action='store_true',
                         help='Look up player info from name')
 
@@ -359,27 +367,30 @@ def main():
 
     args = parser.parse_args()
 
+    # Initialize MLB API client
+    mlb = Mlb()
+
     results = []
 
     if args.bulk:
         # Bulk add mode
         with open(args.bulk) as f:
             players_data = json.load(f)
-        results = add_players_bulk(players_data, args.fetch_stats, args.year)
+        results = add_players_bulk(mlb, players_data, args.fetch_stats, args.year)
     else:
         # Single player mode
-        if not args.name and not args.fangraphs_id:
+        if not args.name and not args.mlb_id:
             parser.error("Either --name or --id is required")
 
         try:
             player = add_player(
-                fangraphs_id=args.fangraphs_id,
+                mlb,
+                mlb_id=args.mlb_id,
                 name=args.name,
                 team=args.team,
                 org=args.org,
                 level=args.level,
                 position=args.position,
-                mlbam_id=args.mlbam_id,
                 lookup=args.lookup,
                 fetch_stats=args.fetch_stats,
                 year=args.year
