@@ -11,8 +11,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-import statsapi
+from mlbstatsapi import Mlb
 
 # Configure logging
 logging.basicConfig(
@@ -39,51 +38,64 @@ MILB_LEVELS = {
 SPORT_ID_TO_LEVEL = {v: k for k, v in MILB_LEVELS.items()}
 
 
-def get_milb_players_for_level(year: int, sport_id: int) -> list[dict]:
+def get_milb_players_for_level(mlb: Mlb, year: int, sport_id: int) -> list[dict]:
     """Fetch all players for a specific MiLB level using MLB Stats API."""
     players = []
     level_name = SPORT_ID_TO_LEVEL.get(sport_id, 'Unknown')
 
     try:
         # Get all teams for this sport/level
-        teams_data = statsapi.get('teams', {'sportId': sport_id, 'season': year})
-        teams = teams_data.get('teams', [])
+        teams = mlb.get_teams(sport_id=sport_id, season=year)
+
+        if not teams:
+            logger.debug(f"No teams found for sport_id {sport_id} in {year}")
+            return players
 
         for team in teams:
-            team_id = team.get('id')
-            team_name = team.get('name', 'Unknown')
-            parent_org = team.get('parentOrgName', '')
-            parent_org_abbrev = team.get('parentOrgId', '')
+            team_id = team.id
+            team_name = team.name or 'Unknown'
+
+            # Get parent org info from team object
+            parent_org = ''
+            if hasattr(team, 'parent_org_name') and team.parent_org_name:
+                parent_org = team.parent_org_name[:3].upper()
 
             try:
-                # Get the 40-man roster for this team (includes all players)
-                roster_data = statsapi.get('team_roster', {
-                    'teamId': team_id,
-                    'season': year,
-                    'rosterType': 'fullSeason'
-                })
+                # Get the roster for this team
+                roster = mlb.get_team_roster(team_id, season=year)
 
-                roster = roster_data.get('roster', [])
-                for player_entry in roster:
-                    person = player_entry.get('person', {})
-                    position = player_entry.get('position', {})
+                if not roster:
+                    continue
 
-                    player_id = person.get('id')
+                for player in roster:
+                    player_id = player.id if hasattr(player, 'id') else None
                     if not player_id:
                         continue
 
-                    pos_abbrev = position.get('abbreviation', 'UTIL')
+                    # Get player name
+                    full_name = player.fullname if hasattr(player, 'fullname') else ''
+                    if not full_name:
+                        full_name = player.full_name if hasattr(player, 'full_name') else ''
+
+                    # Get position
+                    pos_abbrev = 'UTIL'
+                    if hasattr(player, 'primaryposition') and player.primaryposition:
+                        pos_abbrev = player.primaryposition.abbreviation or 'UTIL'
+                    elif hasattr(player, 'primary_position') and player.primary_position:
+                        pos_abbrev = player.primary_position.abbreviation or 'UTIL'
+
                     player_type = 'pitcher' if pos_abbrev == 'P' else 'batter'
 
                     players.append({
                         'player_id': str(player_id),
-                        'name': person.get('fullName', ''),
+                        'name': full_name,
                         'team': team_name,
-                        'org': parent_org[:3].upper() if parent_org else '',
+                        'org': parent_org,
                         'level': level_name,
                         'position': pos_abbrev,
                         'type': player_type,
                     })
+
             except Exception as e:
                 logger.debug(f"Failed to fetch roster for {team_name}: {e}")
                 continue
@@ -94,28 +106,17 @@ def get_milb_players_for_level(year: int, sport_id: int) -> list[dict]:
     return players
 
 
-def get_milb_stats(year: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fetch all MiLB player data for a year using MLB Stats API."""
+def get_milb_players(mlb: Mlb, year: int) -> list[dict]:
+    """Fetch all MiLB players for a year using MLB Stats API."""
     all_players = []
 
     for level_name, sport_id in MILB_LEVELS.items():
         logger.info(f"Fetching {level_name} players for {year}...")
-        players = get_milb_players_for_level(year, sport_id)
+        players = get_milb_players_for_level(mlb, year, sport_id)
         all_players.extend(players)
         logger.info(f"  Found {len(players)} players at {level_name}")
 
-    if not all_players:
-        logger.warning(f"No players found for {year}")
-        return pd.DataFrame(), pd.DataFrame()
-
-    df = pd.DataFrame(all_players)
-
-    # Split into batters and pitchers
-    batters = df[df['type'] == 'batter'].copy()
-    pitchers = df[df['type'] == 'pitcher'].copy()
-
-    logger.info(f"Total: {len(batters)} batters, {len(pitchers)} pitchers")
-    return batters, pitchers
+    return all_players
 
 
 def load_existing_players() -> set:
@@ -150,77 +151,50 @@ def build_index(year: int = None, fallback_year: int = None) -> tuple[list[dict]
     if fallback_year is None:
         fallback_year = year - 1
 
-    players = {}
+    # Initialize the MLB API client
+    mlb = Mlb()
+
     existing_ids = load_existing_players()
 
-    # Try to get MiLB stats for the requested year
-    batters, pitchers = get_milb_stats(year)
+    # Try to get MiLB players for the requested year
+    all_players = get_milb_players(mlb, year)
 
     # If no data found, try the fallback year
     year_used = year
-    if (batters is None or batters.empty) and (pitchers is None or pitchers.empty):
+    if not all_players:
         logger.warning(f"No data found for {year}, trying {fallback_year}...")
-        batters, pitchers = get_milb_stats(fallback_year)
+        all_players = get_milb_players(mlb, fallback_year)
         year_used = fallback_year
 
-    # Process batters
-    if batters is not None and not batters.empty:
-        logger.info(f"Processing {len(batters)} batters...")
-        for _, row in batters.iterrows():
-            player_id = str(row.get('player_id', ''))
-            if not player_id or player_id == 'nan':
-                continue
+    if not all_players:
+        logger.warning(f"No players found for {year_used}")
+        return [], year_used
 
-            name = row.get('name', '')
-            if pd.isna(name) or not name:
-                continue
+    # Deduplicate and build player index
+    players = {}
+    for p in all_players:
+        player_id = p['player_id']
+        if not player_id or player_id == 'nan':
+            continue
 
-            level = row.get('level', 'A+')
-            team = row.get('team', 'Unknown')
-            org = row.get('org', '')
-            pos = row.get('position', 'UTIL')
+        name = p.get('name', '')
+        if not name:
+            continue
 
-            players[player_id] = {
-                'mlbId': player_id,
-                'name': str(name),
-                'team': team if team and team != 'nan' else 'Unknown',
-                'org': org if org and org != 'NAN' else '',
-                'level': level,
-                'position': pos if pos else 'UTIL',
-                'type': 'batter',
-                'inRegistry': player_id in existing_ids,
-            }
+        # Skip if already added (keep first occurrence - typically higher level)
+        if player_id in players:
+            continue
 
-    # Process pitchers
-    if pitchers is not None and not pitchers.empty:
-        logger.info(f"Processing {len(pitchers)} pitchers...")
-        for _, row in pitchers.iterrows():
-            player_id = str(row.get('player_id', ''))
-            if not player_id or player_id == 'nan':
-                continue
-
-            # Skip if already added as batter (two-way player)
-            if player_id in players:
-                continue
-
-            name = row.get('name', '')
-            if pd.isna(name) or not name:
-                continue
-
-            level = row.get('level', 'A+')
-            team = row.get('team', 'Unknown')
-            org = row.get('org', '')
-
-            players[player_id] = {
-                'mlbId': player_id,
-                'name': str(name),
-                'team': team if team and team != 'nan' else 'Unknown',
-                'org': org if org and org != 'NAN' else '',
-                'level': level,
-                'position': 'P',
-                'type': 'pitcher',
-                'inRegistry': player_id in existing_ids,
-            }
+        players[player_id] = {
+            'mlbId': player_id,
+            'name': name,
+            'team': p.get('team', 'Unknown'),
+            'org': p.get('org', ''),
+            'level': p.get('level', 'A+'),
+            'position': p.get('position', 'UTIL'),
+            'type': p.get('type', 'batter'),
+            'inRegistry': player_id in existing_ids,
+        }
 
     result = list(players.values())
     logger.info(f"Built index with {len(result)} players for {year_used}")
