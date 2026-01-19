@@ -22,6 +22,7 @@ interface PlayerStatsTableProps {
   type: 'batter' | 'pitcher';
   players: PlayerRow[];
   onRemovePlayer: (teamPlayerId: string, playerName: string) => void;
+  onPlayerClick?: (player: Player) => void;
 }
 
 export function PlayerStatsTable({
@@ -29,6 +30,7 @@ export function PlayerStatsTable({
   type,
   players,
   onRemovePlayer,
+  onPlayerClick,
 }: PlayerStatsTableProps) {
   const [activeCategory, setActiveCategory] = useState<StatCategory>('standard');
 
@@ -114,9 +116,13 @@ export function PlayerStatsTable({
                   {/* Fixed columns */}
                   <td className="px-4 py-3 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900 dark:text-white text-sm">
+                      <button
+                        onClick={() => player && onPlayerClick?.(player)}
+                        disabled={!player}
+                        className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 text-sm text-left hover:underline disabled:text-gray-900 disabled:dark:text-white disabled:no-underline disabled:cursor-default"
+                      >
                         {player?.name || 'Unknown'}
-                      </span>
+                      </button>
                       {player?.hasStatcast && (
                         <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded">
                           SC

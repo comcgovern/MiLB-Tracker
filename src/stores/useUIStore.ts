@@ -1,6 +1,6 @@
 // stores/useUIStore.ts
 import { create } from 'zustand';
-import type { Split } from '../types';
+import type { Split, Player } from '../types';
 
 interface UIStore {
   activeTeamId: string | null;
@@ -13,6 +13,7 @@ interface UIStore {
   isSearchNewPlayerModalOpen: boolean;
   selectedPlayerIds: string[];
   customDateRange: { start: string; end: string } | null;
+  gameLogPlayer: Player | null;  // Player to show game log for
 
   setActiveTeamId: (teamId: string | null) => void;
   setActiveSplit: (split: Split) => void;
@@ -31,6 +32,8 @@ interface UIStore {
   clearCustomDateRange: () => void;
   togglePlayerSelection: (playerId: string) => void;
   clearPlayerSelection: () => void;
+  openGameLog: (player: Player) => void;
+  closeGameLog: () => void;
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -44,6 +47,7 @@ export const useUIStore = create<UIStore>((set) => ({
   isSearchNewPlayerModalOpen: false,
   selectedPlayerIds: [],
   customDateRange: null,
+  gameLogPlayer: null,
 
   setActiveTeamId: (teamId) =>
     set({ activeTeamId: teamId }),
@@ -99,4 +103,10 @@ export const useUIStore = create<UIStore>((set) => ({
 
   clearPlayerSelection: () =>
     set({ selectedPlayerIds: [] }),
+
+  openGameLog: (player) =>
+    set({ gameLogPlayer: player }),
+
+  closeGameLog: () =>
+    set({ gameLogPlayer: null }),
 }));

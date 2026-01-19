@@ -1,6 +1,7 @@
 // components/Header.tsx
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useUIStore } from '../stores/useUIStore';
+import { DataStatusIndicator } from './DataStatusIndicator';
 
 export function Header() {
   const { darkMode, toggleDarkMode } = useSettingsStore();
@@ -48,8 +49,8 @@ export function Header() {
       </div>
 
       {/* Last updated info */}
-      <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-        Last updated: 2 hours ago
+      <div className="mt-2">
+        <DataStatusIndicator />
       </div>
     </header>
   );
