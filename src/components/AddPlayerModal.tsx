@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useUIStore } from '../stores/useUIStore';
 import { useTeamPlayers } from '../hooks/useTeamPlayers';
 import type { PlayersRegistry } from '../types';
+import { getPlayerId } from '../types';
 
 async function fetchPlayers(): Promise<PlayersRegistry> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
@@ -35,7 +36,7 @@ export function AddPlayerModal() {
 
     return playersRegistry.players.filter(player => {
       // Filter out players already on this team
-      if (existingPlayerIds.has(player.fangraphsId)) return false;
+      if (existingPlayerIds.has(getPlayerId(player))) return false;
 
       // Filter by search query
       if (searchQuery.trim()) {
@@ -61,7 +62,7 @@ export function AddPlayerModal() {
   };
 
   const handleSelectAll = () => {
-    setSelectedPlayers(availablePlayers.map(p => p.fangraphsId));
+    setSelectedPlayers(availablePlayers.map(p => getPlayerId(p)));
   };
 
   const handleDeselectAll = () => {
@@ -189,11 +190,11 @@ export function AddPlayerModal() {
             <div className="space-y-2">
               {availablePlayers.map((player) => (
                 <label
-                  key={player.fangraphsId}
+                  key={getPlayerId(player)}
                   className={`
                     flex items-center p-3 rounded-lg border cursor-pointer transition-colors
                     ${
-                      selectedPlayers.includes(player.fangraphsId)
+                      selectedPlayers.includes(getPlayerId(player))
                         ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                         : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
                     }
@@ -201,8 +202,8 @@ export function AddPlayerModal() {
                 >
                   <input
                     type="checkbox"
-                    checked={selectedPlayers.includes(player.fangraphsId)}
-                    onChange={() => handleTogglePlayer(player.fangraphsId)}
+                    checked={selectedPlayers.includes(getPlayerId(player))}
+                    onChange={() => handleTogglePlayer(getPlayerId(player))}
                     className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                   />
                   <div className="ml-3 flex-1">

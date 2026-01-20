@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
 scripts/build_player_index.py
-Build a searchable index of all MiLB players from FanGraphs.
+Build a searchable index of all MiLB players from the MLB Stats API.
 This creates a static JSON file that the frontend can use to search for players.
 """
 
 import argparse
 import json
 import logging
-import time
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-import pybaseball as pyb
+from mlbstatsapi import Mlb
 
 # Configure logging
 logging.basicConfig(
@@ -27,69 +25,98 @@ DATA_DIR = Path(__file__).parent.parent / 'data'
 INDEX_FILE = DATA_DIR / 'player-index.json'
 PLAYERS_FILE = DATA_DIR / 'players.json'
 
-# MiLB levels and their FanGraphs level codes
+# MiLB levels and their MLB Stats API sport IDs
 MILB_LEVELS = {
-    'AAA': 11,
-    'AA': 12,
-    'A+': 13,  # High-A
-    'A': 14,   # Single-A
-    'CPX': 16, # Rookie/Complex
+    'AAA': 11,   # Triple-A
+    'AA': 12,    # Double-A
+    'A+': 13,    # High-A
+    'A': 14,     # Single-A
+    'CPX': 16,   # Rookie/Complex
 }
 
+# Reverse mapping for sport_id to level name
+SPORT_ID_TO_LEVEL = {v: k for k, v in MILB_LEVELS.items()}
 
-def get_milb_batters(year: int, level_code: int) -> pd.DataFrame:
-    """Fetch MiLB batters for a specific level."""
+
+def get_milb_players_for_level(mlb: Mlb, year: int, sport_id: int) -> list[dict]:
+    """Fetch all players for a specific MiLB level using MLB Stats API."""
+    players = []
+    level_name = SPORT_ID_TO_LEVEL.get(sport_id, 'Unknown')
+
     try:
-        # Use FanGraphs minor league stats
-        df = pyb.fg_batting_data(
-            year,
-            qual=1,  # At least 1 PA
-        )
-        if df is not None and not df.empty:
-            # Add level info
-            df['level_code'] = level_code
-            return df
+        # Get all teams for this sport/level
+        teams = mlb.get_teams(sport_id=sport_id, season=year)
+
+        if not teams:
+            logger.debug(f"No teams found for sport_id {sport_id} in {year}")
+            return players
+
+        for team in teams:
+            team_id = team.id
+            team_name = team.name or 'Unknown'
+
+            # Get parent org info from team object
+            parent_org = ''
+            if hasattr(team, 'parent_org_name') and team.parent_org_name:
+                parent_org = team.parent_org_name[:3].upper()
+
+            try:
+                # Get the roster for this team
+                roster = mlb.get_team_roster(team_id, season=year)
+
+                if not roster:
+                    continue
+
+                for player in roster:
+                    player_id = player.id if hasattr(player, 'id') else None
+                    if not player_id:
+                        continue
+
+                    # Get player name
+                    full_name = player.fullname if hasattr(player, 'fullname') else ''
+                    if not full_name:
+                        full_name = player.full_name if hasattr(player, 'full_name') else ''
+
+                    # Get position
+                    pos_abbrev = 'UTIL'
+                    if hasattr(player, 'primaryposition') and player.primaryposition:
+                        pos_abbrev = player.primaryposition.abbreviation or 'UTIL'
+                    elif hasattr(player, 'primary_position') and player.primary_position:
+                        pos_abbrev = player.primary_position.abbreviation or 'UTIL'
+
+                    player_type = 'pitcher' if pos_abbrev == 'P' else 'batter'
+
+                    players.append({
+                        'player_id': str(player_id),
+                        'name': full_name,
+                        'team': team_name,
+                        'org': parent_org,
+                        'level': level_name,
+                        'position': pos_abbrev,
+                        'type': player_type,
+                    })
+
+            except Exception as e:
+                logger.debug(f"Failed to fetch roster for {team_name}: {e}")
+                continue
+
     except Exception as e:
-        logger.warning(f"Failed to fetch batters: {e}")
-    return pd.DataFrame()
+        logger.warning(f"Failed to fetch teams for sport_id {sport_id}: {e}")
+
+    return players
 
 
-def get_milb_pitchers(year: int, level_code: int) -> pd.DataFrame:
-    """Fetch MiLB pitchers for a specific level."""
-    try:
-        df = pyb.fg_pitching_data(
-            year,
-            qual=1,  # At least 1 IP
-        )
-        if df is not None and not df.empty:
-            df['level_code'] = level_code
-            return df
-    except Exception as e:
-        logger.warning(f"Failed to fetch pitchers: {e}")
-    return pd.DataFrame()
+def get_milb_players(mlb: Mlb, year: int) -> list[dict]:
+    """Fetch all MiLB players for a year using MLB Stats API."""
+    all_players = []
 
+    for level_name, sport_id in MILB_LEVELS.items():
+        logger.info(f"Fetching {level_name} players for {year}...")
+        players = get_milb_players_for_level(mlb, year, sport_id)
+        all_players.extend(players)
+        logger.info(f"  Found {len(players)} players at {level_name}")
 
-def get_milb_stats(year: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Fetch all MiLB stats for a year using pybaseball."""
-    try:
-        # Get minor league batting stats
-        logger.info(f"Fetching MiLB batting stats for {year}...")
-        batters = pyb.milb_stats(
-            stat_type='hitting',
-            year=year,
-        )
-
-        # Get minor league pitching stats
-        logger.info(f"Fetching MiLB pitching stats for {year}...")
-        pitchers = pyb.milb_stats(
-            stat_type='pitching',
-            year=year,
-        )
-
-        return batters, pitchers
-    except Exception as e:
-        logger.error(f"Failed to fetch MiLB stats: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+    return all_players
 
 
 def load_existing_players() -> set:
@@ -97,136 +124,106 @@ def load_existing_players() -> set:
     if PLAYERS_FILE.exists():
         with open(PLAYERS_FILE) as f:
             data = json.load(f)
-            return {p['fangraphsId'] for p in data.get('players', [])}
+            ids = set()
+            for p in data.get('players', []):
+                # Support both mlbId and legacy fangraphsId
+                if 'mlbId' in p:
+                    ids.add(p['mlbId'])
+                if 'fangraphsId' in p:
+                    ids.add(p['fangraphsId'])
+            return ids
     return set()
 
 
-def build_index(year: int = None) -> list[dict]:
-    """Build the player index from FanGraphs data."""
+def build_index(year: int = None, fallback_year: int = None) -> tuple[list[dict], int]:
+    """Build the player index from MLB Stats API data.
+
+    Args:
+        year: The year to fetch data for. Defaults to current year.
+        fallback_year: Year to fall back to if primary year has no data.
+
+    Returns:
+        Tuple of (player list, year used)
+    """
     if year is None:
         year = datetime.now().year
 
-    players = {}
+    if fallback_year is None:
+        fallback_year = year - 1
+
+    # Initialize the MLB API client
+    mlb = Mlb()
+
     existing_ids = load_existing_players()
 
-    # Try to get MiLB stats
-    batters, pitchers = get_milb_stats(year)
+    # Try to get MiLB players for the requested year
+    all_players = get_milb_players(mlb, year)
 
-    # Process batters
-    if batters is not None and not batters.empty:
-        logger.info(f"Processing {len(batters)} batters...")
-        for _, row in batters.iterrows():
-            player_id = str(row.get('player_id', row.get('playerid', row.get('key_fangraphs', ''))))
-            if not player_id or player_id == 'nan':
-                continue
+    # If no data found, try the fallback year
+    year_used = year
+    if not all_players:
+        logger.warning(f"No data found for {year}, trying {fallback_year}...")
+        all_players = get_milb_players(mlb, fallback_year)
+        year_used = fallback_year
 
-            # Determine level from the level column or affiliate
-            level = 'A+'  # Default
-            level_col = str(row.get('level', row.get('Level', ''))).upper()
-            if 'AAA' in level_col:
-                level = 'AAA'
-            elif 'AA' in level_col:
-                level = 'AA'
-            elif 'HIGH' in level_col or 'A+' in level_col:
-                level = 'A+'
-            elif 'LOW' in level_col or level_col == 'A':
-                level = 'A'
-            elif 'ROOKIE' in level_col or 'CPX' in level_col:
-                level = 'CPX'
+    if not all_players:
+        logger.warning(f"No players found for {year_used}")
+        return [], year_used
 
-            # Get team info
-            team = str(row.get('team', row.get('Team', row.get('affiliate', 'Unknown'))))
-            org = str(row.get('org', row.get('parent_org', '')))[:3].upper() if row.get('org') or row.get('parent_org') else ''
+    # Deduplicate and build player index
+    players = {}
+    for p in all_players:
+        player_id = p['player_id']
+        if not player_id or player_id == 'nan':
+            continue
 
-            # Get name
-            name = row.get('name', row.get('Name', row.get('player_name', '')))
-            if pd.isna(name) or not name:
-                continue
+        name = p.get('name', '')
+        if not name:
+            continue
 
-            # Position
-            pos = str(row.get('pos', row.get('Pos', row.get('position', 'UTIL'))))
-            if pd.isna(pos):
-                pos = 'UTIL'
+        # Skip if already added (keep first occurrence - typically higher level)
+        if player_id in players:
+            continue
 
-            players[player_id] = {
-                'fangraphsId': player_id,
-                'name': str(name),
-                'team': team if team and team != 'nan' else 'Unknown',
-                'org': org if org and org != 'NAN' else '',
-                'level': level,
-                'position': pos,
-                'type': 'batter',
-                'inRegistry': player_id in existing_ids,
-            }
-
-    # Process pitchers
-    if pitchers is not None and not pitchers.empty:
-        logger.info(f"Processing {len(pitchers)} pitchers...")
-        for _, row in pitchers.iterrows():
-            player_id = str(row.get('player_id', row.get('playerid', row.get('key_fangraphs', ''))))
-            if not player_id or player_id == 'nan':
-                continue
-
-            # Skip if already added as batter
-            if player_id in players:
-                continue
-
-            # Determine level
-            level = 'A+'
-            level_col = str(row.get('level', row.get('Level', ''))).upper()
-            if 'AAA' in level_col:
-                level = 'AAA'
-            elif 'AA' in level_col:
-                level = 'AA'
-            elif 'HIGH' in level_col or 'A+' in level_col:
-                level = 'A+'
-            elif 'LOW' in level_col or level_col == 'A':
-                level = 'A'
-            elif 'ROOKIE' in level_col or 'CPX' in level_col:
-                level = 'CPX'
-
-            team = str(row.get('team', row.get('Team', row.get('affiliate', 'Unknown'))))
-            org = str(row.get('org', row.get('parent_org', '')))[:3].upper() if row.get('org') or row.get('parent_org') else ''
-
-            name = row.get('name', row.get('Name', row.get('player_name', '')))
-            if pd.isna(name) or not name:
-                continue
-
-            players[player_id] = {
-                'fangraphsId': player_id,
-                'name': str(name),
-                'team': team if team and team != 'nan' else 'Unknown',
-                'org': org if org and org != 'NAN' else '',
-                'level': level,
-                'position': 'P',
-                'type': 'pitcher',
-                'inRegistry': player_id in existing_ids,
-            }
+        players[player_id] = {
+            'mlbId': player_id,
+            'name': name,
+            'team': p.get('team', 'Unknown'),
+            'org': p.get('org', ''),
+            'level': p.get('level', 'A+'),
+            'position': p.get('position', 'UTIL'),
+            'type': p.get('type', 'batter'),
+            'inRegistry': player_id in existing_ids,
+        }
 
     result = list(players.values())
-    logger.info(f"Built index with {len(result)} players")
-    return result
+    logger.info(f"Built index with {len(result)} players for {year_used}")
+    return result, year_used
 
 
 def main():
     parser = argparse.ArgumentParser(description='Build MiLB player index')
     parser.add_argument('--year', type=int, default=datetime.now().year,
-                        help='Season year')
+                        help='Season year to fetch (default: current year)')
+    parser.add_argument('--fallback-year', type=int, default=None,
+                        help='Year to use if primary year has no data (default: year-1)')
     parser.add_argument('--output', type=str,
                         help='Output file path (default: data/player-index.json)')
 
     args = parser.parse_args()
 
-    # Enable pybaseball caching
-    pyb.cache.enable()
+    # Build index (will fallback to previous year if needed)
+    players, year_used = build_index(args.year, args.fallback_year)
 
-    # Build index
-    players = build_index(args.year)
+    if not players:
+        logger.error("No players found. Index not created.")
+        return
 
     # Prepare output
     output_data = {
         'players': players,
-        'year': args.year,
+        'year': year_used,
+        'requestedYear': args.year,
         'lastUpdated': datetime.now().isoformat(),
         'count': len(players),
     }
@@ -239,6 +236,8 @@ def main():
         json.dump(output_data, f, indent=2)
 
     logger.info(f"Saved index to {output_path}")
+    if year_used != args.year:
+        logger.info(f"Note: Used {year_used} data (requested {args.year} had no data)")
 
 
 if __name__ == '__main__':

@@ -9,10 +9,11 @@ import { AddTeamModal } from './components/AddTeamModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { DateRangeModal } from './components/DateRangeModal';
 import { SearchNewPlayerModal } from './components/SearchNewPlayerModal';
+import { GameLogModal } from './components/GameLogModal';
 
 function App() {
   const { darkMode } = useSettingsStore();
-  const { isDateRangeModalOpen, closeDateRangeModal, setCustomDateRange } = useUIStore();
+  const { isDateRangeModalOpen, closeDateRangeModal, setCustomDateRange, gameLogPlayer, closeGameLog } = useUIStore();
 
   // Apply dark mode to document
   useEffect(() => {
@@ -49,6 +50,10 @@ function App() {
         isOpen={isDateRangeModalOpen}
         onClose={closeDateRangeModal}
         onApply={handleApplyDateRange}
+      />
+      <GameLogModal
+        player={gameLogPlayer}
+        onClose={closeGameLog}
       />
     </div>
   );

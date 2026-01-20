@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUIStore } from '../stores/useUIStore';
 import type { PlayerIndex, IndexedPlayer, Player, PlayersRegistry } from '../types';
+import { getPlayerId } from '../types';
 
 async function fetchPlayerIndex(): Promise<PlayerIndex> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
@@ -24,7 +25,8 @@ async function fetchPlayersRegistry(): Promise<PlayersRegistry> {
 // For local development: save players to localStorage for later syncing
 function savePlayerToLocalQueue(player: Omit<Player, 'hasStatcast'>): void {
   const queue = JSON.parse(localStorage.getItem('pendingPlayers') || '[]');
-  if (!queue.find((p: Player) => p.fangraphsId === player.fangraphsId)) {
+  const playerId = getPlayerId(player as Player);
+  if (!queue.find((p: Player) => getPlayerId(p) === playerId)) {
     queue.push({ ...player, hasStatcast: false, addedAt: new Date().toISOString() });
     localStorage.setItem('pendingPlayers', JSON.stringify(queue));
   }
@@ -34,8 +36,8 @@ function getPendingPlayers(): Player[] {
   return JSON.parse(localStorage.getItem('pendingPlayers') || '[]');
 }
 
-function removePendingPlayer(fangraphsId: string): void {
-  const queue = getPendingPlayers().filter(p => p.fangraphsId !== fangraphsId);
+function removePendingPlayer(playerId: string): void {
+  const queue = getPendingPlayers().filter(p => getPlayerId(p) !== playerId);
   localStorage.setItem('pendingPlayers', JSON.stringify(queue));
 }
 
@@ -57,7 +59,7 @@ export function SearchNewPlayerModal() {
 
   // Manual form state
   const [manualPlayer, setManualPlayer] = useState({
-    fangraphsId: '',
+    mlbId: '',
     name: '',
     team: '',
     org: '',
@@ -83,7 +85,7 @@ export function SearchNewPlayerModal() {
   });
 
   const existingIds = useMemo(() => {
-    return new Set(registry?.players?.map(p => p.fangraphsId) || []);
+    return new Set(registry?.players?.map(p => getPlayerId(p)) || []);
   }, [registry]);
 
   // Filter players based on search
@@ -94,7 +96,7 @@ export function SearchNewPlayerModal() {
     return playerIndex.players
       .filter(player => {
         // Don't show players already in registry
-        if (existingIds.has(player.fangraphsId)) return false;
+        if (existingIds.has(getPlayerId(player))) return false;
 
         return (
           player.name.toLowerCase().includes(query) ||
@@ -110,7 +112,7 @@ export function SearchNewPlayerModal() {
 
   const handleAddFromIndex = useCallback((player: IndexedPlayer) => {
     const newPlayer: Omit<Player, 'hasStatcast'> = {
-      fangraphsId: player.fangraphsId,
+      mlbId: getPlayerId(player),
       name: player.name,
       team: player.team,
       org: player.org,
@@ -130,8 +132,8 @@ export function SearchNewPlayerModal() {
     setError('');
 
     // Validate
-    if (!manualPlayer.fangraphsId.trim()) {
-      setError('FanGraphs ID is required');
+    if (!manualPlayer.mlbId.trim()) {
+      setError('MLB ID is required');
       return;
     }
     if (!manualPlayer.name.trim()) {
@@ -140,13 +142,13 @@ export function SearchNewPlayerModal() {
     }
 
     // Check if already exists
-    if (existingIds.has(manualPlayer.fangraphsId)) {
+    if (existingIds.has(manualPlayer.mlbId)) {
       setError('Player already exists in registry');
       return;
     }
 
     const newPlayer: Omit<Player, 'hasStatcast'> = {
-      fangraphsId: manualPlayer.fangraphsId.trim(),
+      mlbId: manualPlayer.mlbId.trim(),
       name: manualPlayer.name.trim(),
       team: manualPlayer.team.trim() || 'Unknown',
       org: manualPlayer.org || 'UNK',
@@ -159,7 +161,7 @@ export function SearchNewPlayerModal() {
 
     // Reset form
     setManualPlayer({
-      fangraphsId: '',
+      mlbId: '',
       name: '',
       team: '',
       org: '',
@@ -171,8 +173,8 @@ export function SearchNewPlayerModal() {
     setTimeout(() => setSuccess(''), 3000);
   }, [manualPlayer, existingIds]);
 
-  const handleRemovePending = useCallback((fangraphsId: string) => {
-    removePendingPlayer(fangraphsId);
+  const handleRemovePending = useCallback((playerId: string) => {
+    removePendingPlayer(playerId);
     queryClient.invalidateQueries({ queryKey: ['players'] });
     // Force re-render
     setShowAddedPlayers(prev => prev);
@@ -186,7 +188,7 @@ export function SearchNewPlayerModal() {
 
   const generateCliCommand = useCallback((player: Player) => {
     return `python scripts/add_player.py \\
-  --id "${player.fangraphsId}" \\
+  --id "${getPlayerId(player)}" \\
   --name "${player.name}" \\
   --team "${player.team}" \\
   --org "${player.org}" \\
@@ -290,7 +292,7 @@ export function SearchNewPlayerModal() {
 
                   {pendingPlayers.map((player) => (
                     <div
-                      key={player.fangraphsId}
+                      key={getPlayerId(player)}
                       className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
                     >
                       <div className="flex items-center justify-between mb-3">
@@ -303,7 +305,7 @@ export function SearchNewPlayerModal() {
                           </span>
                         </div>
                         <button
-                          onClick={() => handleRemovePending(player.fangraphsId)}
+                          onClick={() => handleRemovePending(getPlayerId(player))}
                           className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 text-sm"
                         >
                           Remove
@@ -340,22 +342,21 @@ export function SearchNewPlayerModal() {
             <div className="space-y-4">
               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
                 <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                  <strong>Tip:</strong> Find the FanGraphs ID by going to the player's page on
-                  FanGraphs. The ID is in the URL (e.g., <code>sa3021456</code> from
-                  <code>fangraphs.com/players/player-name/sa3021456/stats</code>)
+                  <strong>Tip:</strong> Find the MLB ID by searching on MLB.com or using the
+                  player search above. The ID is a numeric value like <code>808967</code>.
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    FanGraphs ID *
+                    MLB ID *
                   </label>
                   <input
                     type="text"
-                    value={manualPlayer.fangraphsId}
-                    onChange={(e) => setManualPlayer(prev => ({ ...prev, fangraphsId: e.target.value }))}
-                    placeholder="e.g., sa3021456"
+                    value={manualPlayer.mlbId}
+                    onChange={(e) => setManualPlayer(prev => ({ ...prev, mlbId: e.target.value }))}
+                    placeholder="e.g., 808967"
                     className="input w-full"
                   />
                 </div>
@@ -509,7 +510,7 @@ export function SearchNewPlayerModal() {
 
                   {filteredPlayers.map((player) => (
                     <div
-                      key={player.fangraphsId}
+                      key={getPlayerId(player)}
                       className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
                       <div>
@@ -529,7 +530,7 @@ export function SearchNewPlayerModal() {
                           {player.position} • {player.org || 'UNK'} • {player.level} • {player.team}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
-                          ID: {player.fangraphsId}
+                          ID: {getPlayerId(player)}
                         </div>
                       </div>
                       <button
