@@ -349,6 +349,7 @@ GitHub Actions automates the entire data pipeline:
 
 ### 5.2 Scheduled Stats Update Workflow
 
+{% raw %}
 ```yaml
 # .github/workflows/update-stats.yml
 name: Update MiLB Stats
@@ -378,24 +379,24 @@ env:
 jobs:
   update-stats:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: scripts/requirements.txt
-      
+
       - name: Install dependencies
         run: |
           pip install -r scripts/requirements.txt
-      
+
       - name: Fetch player stats
         run: |
           python scripts/fetch_stats.py \
@@ -404,27 +405,27 @@ jobs:
             ${{ github.event.inputs.specific_players && format('--players {0}', github.event.inputs.specific_players) || '' }}
         env:
           PYTHONUNBUFFERED: '1'
-      
+
       - name: Fetch Statcast data
         run: |
           python scripts/fetch_statcast.py --year 2025
         continue-on-error: true  # Statcast sometimes unavailable
-      
+
       - name: Calculate splits
         run: |
           python scripts/aggregate_splits.py
-      
+
       - name: Update metadata
         run: |
           echo '{"lastUpdated": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "playerCount": '$(jq '.players | length' data/players.json)'}' > data/meta.json
-      
+
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           git add data/
-          
+
           # Only commit if there are changes
           if git diff --staged --quiet; then
             echo "No changes to commit"
@@ -443,9 +444,11 @@ jobs:
         with:
           event-type: stats-updated
 ```
+{% endraw %}
 
 ### 5.3 Deploy Workflow
 
+{% raw %}
 ```yaml
 # .github/workflows/deploy.yml
 name: Deploy to GitHub Pages
@@ -478,21 +481,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Build
         run: npm run build
         env:
           VITE_DATA_BASE_URL: '/${{ github.event.repository.name }}/data'
-      
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -509,9 +512,11 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 ```
+{% endraw %}
 
 ### 5.4 On-Demand Update Workflow
 
+{% raw %}
 ```yaml
 # .github/workflows/on-demand-update.yml
 name: On-Demand Stats Update
@@ -534,26 +539,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: scripts/requirements.txt
-      
+
       - run: pip install -r scripts/requirements.txt
-      
+
       - name: Fetch specific players
         run: |
           python scripts/fetch_stats.py \
             --players "${{ github.event.inputs.player_ids }}" \
             --no-cache
-      
+
       - name: Fetch Statcast (if enabled)
         if: ${{ github.event.inputs.include_statcast == 'true' }}
         run: python scripts/fetch_statcast.py --players "${{ github.event.inputs.player_ids }}"
         continue-on-error: true
-      
+
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
@@ -562,6 +567,7 @@ jobs:
           git diff --staged --quiet || git commit -m "📊 Update stats for: ${{ github.event.inputs.player_ids }}"
           git push
 ```
+{% endraw %}
 
 ### 5.5 Python Scripts
 
@@ -1055,6 +1061,7 @@ print(results)
 
 Customize the cron schedule in `update-stats.yml`:
 
+{% raw %}
 ```yaml
 schedule:
   # Weekdays during season: 6am, 2pm, 10pm UTC (covers game times)
@@ -1062,6 +1069,7 @@ schedule:
   # Weekends during season: Every 4 hours
   - cron: '0 */4 * 4-9 0,6'
 ```
+{% endraw %}
 
 ### 5.9 Error Handling & Monitoring
 
