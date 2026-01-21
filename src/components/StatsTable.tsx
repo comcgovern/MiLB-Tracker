@@ -43,6 +43,17 @@ async function fetchStats(): Promise<StatsFile> {
   return response.json();
 }
 
+async function fetchLastSeasonStats(): Promise<StatsFile> {
+  const basePath = import.meta.env.VITE_BASE_PATH || '';
+  const lastYear = new Date().getFullYear() - 1;
+  const response = await fetch(`${basePath}/data/stats/${lastYear}.json`);
+  if (!response.ok) {
+    // Return empty stats if not found
+    return {};
+  }
+  return response.json();
+}
+
 export function StatsTable() {
   const { activeTeamId, activeSplit, openGameLog } = useUIStore();
   const { removePlayerFromTeam } = useTeamPlayers(activeTeamId);
@@ -79,6 +90,16 @@ export function StatsTable() {
   } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
+  });
+
+  // Fetch last season stats
+  const {
+    data: lastSeasonStats,
+    isLoading: lastSeasonLoading,
+  } = useQuery({
+    queryKey: ['lastSeasonStats'],
+    queryFn: fetchLastSeasonStats,
+    enabled: activeSplit === 'lastSeason', // Only fetch when needed
   });
 
   const handleRemovePlayer = async (teamPlayerId: string, playerName: string) => {
@@ -125,7 +146,8 @@ export function StatsTable() {
   };
 
   // Loading state
-  if (playersLoading || statsLoading || indexLoading) {
+  const isLoadingLastSeason = activeSplit === 'lastSeason' && lastSeasonLoading;
+  if (playersLoading || statsLoading || indexLoading || isLoadingLastSeason) {
     return (
       <div className="p-8 text-center">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mb-4" />
@@ -160,22 +182,29 @@ export function StatsTable() {
   teamPlayers.forEach((tp) => {
     // Find player by ID from registry or index
     const { player, indexType } = findPlayerInfo(tp.playerId);
-    const playerStats = statsData?.[tp.playerId];
+
+    // Use last season stats if that split is selected, otherwise use current season
+    const currentPlayerStats = statsData?.[tp.playerId];
+    const lastSeasonPlayerStats = lastSeasonStats?.[tp.playerId];
+    const playerStats = activeSplit === 'lastSeason' ? lastSeasonPlayerStats : currentPlayerStats;
+
+    // For determining player type, prefer current stats, then fall back to last season
+    const typeSource = currentPlayerStats || lastSeasonPlayerStats;
 
     // Determine if batter or pitcher based on stats data, then fall back to index type
-    const isBatterFromStats = playerStats?.type === 'batter' || !!playerStats?.batting;
-    const isPitcherFromStats = playerStats?.type === 'pitcher' || !!playerStats?.pitching;
+    const isBatterFromStats = typeSource?.type === 'batter' || !!typeSource?.batting;
+    const isPitcherFromStats = typeSource?.type === 'pitcher' || !!typeSource?.pitching;
 
     // Use index type as fallback when no stats available
-    const isPitcher = isPitcherFromStats || (!playerStats && indexType === 'pitcher');
-    const isBatter = isBatterFromStats || (!playerStats && indexType === 'batter');
+    const isPitcher = isPitcherFromStats || (!typeSource && indexType === 'pitcher');
+    const isBatter = isBatterFromStats || (!typeSource && indexType === 'batter');
 
     // Get stats based on active split and player type
     let stats: BattingStats | PitchingStats | undefined;
 
-    if (isBatter || (!isPitcher && !playerStats)) {
+    if (isBatter || (!isPitcher && !typeSource)) {
       // Batter stats
-      if (activeSplit === 'season') {
+      if (activeSplit === 'season' || activeSplit === 'lastSeason') {
         stats = playerStats?.batting;
       } else if (
         activeSplit === 'yesterday' ||
@@ -188,7 +217,7 @@ export function StatsTable() {
       }
     } else {
       // Pitcher stats
-      if (activeSplit === 'season') {
+      if (activeSplit === 'season' || activeSplit === 'lastSeason') {
         stats = playerStats?.pitching;
       } else if (
         activeSplit === 'yesterday' ||

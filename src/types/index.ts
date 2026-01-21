@@ -160,7 +160,7 @@ export interface PlayerStatsData {
   pitchingGameLog?: GameLogEntry[];
 }
 
-export type Split = 'season' | 'last7' | 'last14' | 'last30' | 'today' | 'yesterday';
+export type Split = 'season' | 'lastSeason' | 'last7' | 'last14' | 'last30' | 'today' | 'yesterday';
 
 export interface PlayersRegistry {
   players: Player[];

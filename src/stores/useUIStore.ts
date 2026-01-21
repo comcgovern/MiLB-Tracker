@@ -5,7 +5,6 @@ import type { Split, Player } from '../types';
 interface UIStore {
   activeTeamId: string | null;
   activeSplit: Split;
-  searchQuery: string;
   isAddPlayerModalOpen: boolean;
   isAddTeamModalOpen: boolean;
   isSettingsModalOpen: boolean;
@@ -16,7 +15,6 @@ interface UIStore {
 
   setActiveTeamId: (teamId: string | null) => void;
   setActiveSplit: (split: Split) => void;
-  setSearchQuery: (query: string) => void;
   openAddPlayerModal: () => void;
   closeAddPlayerModal: () => void;
   openAddTeamModal: () => void;
@@ -36,7 +34,6 @@ interface UIStore {
 export const useUIStore = create<UIStore>((set) => ({
   activeTeamId: null,
   activeSplit: 'yesterday',
-  searchQuery: '',
   isAddPlayerModalOpen: false,
   isAddTeamModalOpen: false,
   isSettingsModalOpen: false,
@@ -50,9 +47,6 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setActiveSplit: (split) =>
     set({ activeSplit: split }),
-
-  setSearchQuery: (query) =>
-    set({ searchQuery: query }),
 
   openAddPlayerModal: () =>
     set({ isAddPlayerModalOpen: true }),

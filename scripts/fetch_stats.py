@@ -464,6 +464,8 @@ def main():
                         help='Comma-separated player IDs (default: all in players.json)')
     parser.add_argument('--no-cache', action='store_true',
                         help='Ignore cached data and refresh all')
+    parser.add_argument('--include-last-season', action='store_true',
+                        help='Also fetch stats for the previous season')
     args = parser.parse_args()
 
     # Initialize MLB API client
@@ -487,8 +489,14 @@ def main():
 
     logger.info(f"Fetching stats for {len(player_ids)} players (year={args.year})")
 
-    # Fetch stats
+    # Fetch stats for current year
     fetch_all_players(mlb, player_ids, args.year, use_cache=not args.no_cache)
+
+    # Optionally fetch last season stats
+    if args.include_last_season:
+        last_year = args.year - 1
+        logger.info(f"Fetching last season stats for {len(player_ids)} players (year={last_year})")
+        fetch_all_players(mlb, player_ids, last_year, use_cache=not args.no_cache)
 
     logger.info("Done!")
 
