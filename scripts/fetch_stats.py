@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).parent.parent / 'data'
 STATS_DIR = DATA_DIR / 'stats'
 GAME_LOGS_DIR = DATA_DIR / 'game-logs'
-PLAYERS_FILE = DATA_DIR / 'players.json'
+PLAYER_INDEX_FILE = DATA_DIR / 'player-index.json'
 
 # API Configuration
 MLB_STATS_API_BASE = 'https://statsapi.mlb.com/api/v1'
@@ -34,19 +34,15 @@ REQUEST_DELAY = 1.0  # seconds between requests
 REQUEST_TIMEOUT = 30  # seconds
 
 
-def load_players() -> dict:
-    """Load the player registry."""
-    if PLAYERS_FILE.exists():
-        with open(PLAYERS_FILE) as f:
+def load_player_index() -> dict:
+    """Load the player index."""
+    if PLAYER_INDEX_FILE.exists():
+        with open(PLAYER_INDEX_FILE) as f:
             return json.load(f)
     return {'players': []}
 
 
-def save_players(data: dict) -> None:
-    """Save the player registry."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with open(PLAYERS_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+# Removed save_players function - no longer needed since we read from player-index.json
 
 
 def fetch_player_stats_from_api(player_id: int, year: int) -> Optional[dict]:
@@ -473,7 +469,7 @@ def main():
     parser.add_argument('--year', type=int, default=datetime.now().year,
                         help='Season year (default: current year)')
     parser.add_argument('--players', type=str, default='',
-                        help='Comma-separated player IDs (default: all in players.json)')
+                        help='Comma-separated player IDs (default: all in player-index.json)')
     parser.add_argument('--no-cache', action='store_true',
                         help='Ignore cached data and refresh all')
     parser.add_argument('--include-last-season', action='store_true',
@@ -489,16 +485,16 @@ def main():
     if args.players:
         player_ids = [p.strip() for p in args.players.split(',')]
     else:
-        registry = load_players()
+        # Load from player index
+        player_index = load_player_index()
         player_ids = []
-        for p in registry.get('players', []):
-            # Support both mlbId and legacy fangraphsId
-            player_id = p.get('mlbId') or p.get('fangraphsId')
+        for p in player_index.get('players', []):
+            player_id = p.get('mlbId')
             if player_id:
                 player_ids.append(str(player_id))
 
     if not player_ids:
-        logger.error("No players to fetch. Add players to data/players.json or use --players")
+        logger.error("No players to fetch. Build player index first with build_player_index.py")
         sys.exit(1)
 
     logger.info(f"Fetching stats for {len(player_ids)} players (year={args.year})")

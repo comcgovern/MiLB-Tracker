@@ -99,35 +99,17 @@ The app uses GitHub Actions to automatically update player statistics:
 
 - **During season** (April-September): Every 4 hours
 - **Off-season** (October-March): Daily at 6 AM UTC
+- **Player index**: Rebuilt weekly to capture new call-ups and roster changes
 
-You can also manually trigger updates via the GitHub Actions tab.
+### How It Works
 
-## Adding Players to Track
+1. **Player Index** (`player-index.json`): A searchable database of ~6,000+ active MiLB players, rebuilt weekly
+2. **Stats Fetching**: Stats are automatically fetched for **all players in the player index**
+3. **No Manual Setup**: Players you add through the UI will have stats available after the next scheduled update
 
-Edit `data/players.json` to add players to track:
-
-```json
-{
-  "players": [
-    {
-      "fangraphsId": "sa3014981",
-      "name": "Player Name",
-      "team": "Team Name",
-      "org": "MLB",
-      "level": "AAA",
-      "position": "SS",
-      "hasStatcast": true
-    }
-  ]
-}
-```
-
-To find FanGraphs IDs:
-```python
-import pybaseball as pyb
-results = pyb.playerid_lookup('last_name', 'first_name')
-print(results)
-```
+You can also manually trigger updates via the GitHub Actions tab:
+- **"Update MiLB Stats"** - Fetches latest stats for all players
+- **"Build Player Index"** - Rebuilds the player search database
 
 ## Deployment
 
@@ -145,11 +127,15 @@ The app is deployed to GitHub Pages automatically when you push to the main bran
 MiLB-Tracker/
 ├── .github/workflows/     # GitHub Actions workflows
 ├── data/                  # JSON data files
-│   ├── players.json       # Player registry
-│   ├── stats/            # Season stats
+│   ├── player-index.json  # Searchable index of all MiLB players
+│   ├── meta.json         # Last update timestamp and counts
+│   ├── stats/            # Season stats (e.g., 2024.json, 2025.json)
 │   ├── game-logs/        # Game-by-game logs
 │   └── statcast/         # Statcast data
 ├── scripts/              # Python data fetchers
+│   ├── build_player_index.py  # Builds searchable player database
+│   ├── fetch_stats.py         # Fetches stats for all indexed players
+│   └── fetch_statcast.py      # Fetches Statcast metrics
 ├── src/                  # React application
 │   ├── components/       # React components
 │   ├── db/              # Dexie database config
