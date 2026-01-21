@@ -170,6 +170,16 @@ def format_batting(stat: dict) -> dict:
     if babip_denom > 0:
         result['BABIP'] = round((h - hr) / babip_denom, 3)
 
+    # wRC+ approximation using wOBA
+    # wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
+    # Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
+    if 'wOBA' in result:
+        lg_woba = 0.315
+        woba_scale = 1.15
+        lg_r_per_pa = 0.11
+        wrc_plus = ((result['wOBA'] - lg_woba) / woba_scale + lg_r_per_pa) / lg_r_per_pa * 100
+        result['wRC+'] = round(wrc_plus)
+
     return result
 
 
@@ -216,6 +226,15 @@ def format_pitching(stat: dict) -> dict:
     if ip > 0:
         fip_constant = 3.10
         result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
+
+        # xFIP uses league average HR/FB rate instead of actual HR
+        # Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
+        # BIP (Balls In Play) = BF - SO - BB - HBP
+        # Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
+        bip = bf - so - bb - hbp
+        if bip > 0:
+            expected_hr = bip * 0.035
+            result['xFIP'] = round((13 * expected_hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
 
     return result
 
@@ -326,6 +345,16 @@ def aggregate_batting_stats(stats_list: list[dict]) -> dict:
     if babip_denom > 0:
         result['BABIP'] = round((h - hr) / babip_denom, 3)
 
+    # wRC+ approximation using wOBA
+    # wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
+    # Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
+    if 'wOBA' in result:
+        lg_woba = 0.315
+        woba_scale = 1.15
+        lg_r_per_pa = 0.11
+        wrc_plus = ((result['wOBA'] - lg_woba) / woba_scale + lg_r_per_pa) / lg_r_per_pa * 100
+        result['wRC+'] = round(wrc_plus)
+
     return result
 
 
@@ -388,6 +417,15 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
     if innings > 0:
         fip_constant = 3.10
         result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / innings + fip_constant, 2)
+
+        # xFIP uses league average HR/FB rate instead of actual HR
+        # Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
+        # BIP (Balls In Play) = BF - SO - BB - HBP
+        # Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
+        bip = bf - so - bb - hbp
+        if bip > 0:
+            expected_hr = bip * 0.035
+            result['xFIP'] = round((13 * expected_hr + 3 * (bb + hbp) - 2 * so) / innings + fip_constant, 2)
 
     return result
 

@@ -142,6 +142,17 @@ export function aggregateBattingStats(games: GameLogEntry[]): BattingStats | und
     totals.BABIP = Math.round(((h - hr) / babipDenom) * 1000) / 1000;
   }
 
+  // wRC+ approximation using wOBA
+  // wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
+  // Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
+  if (totals.wOBA !== undefined) {
+    const lgwOBA = 0.315;
+    const wOBAscale = 1.15;
+    const lgRperPA = 0.11;
+    const wrcPlus = ((totals.wOBA - lgwOBA) / wOBAscale + lgRperPA) / lgRperPA * 100;
+    totals['wRC+'] = Math.round(wrcPlus);
+  }
+
   return totals;
 }
 
@@ -214,6 +225,16 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
   if (ip > 0) {
     const fipConstant = 3.10;
     totals.FIP = Math.round(((13 * hr + 3 * (bb + hbp) - 2 * so) / ip + fipConstant) * 100) / 100;
+
+    // xFIP uses league average HR/FB rate instead of actual HR
+    // Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
+    // BIP (Balls In Play) = BF - SO - BB - HBP
+    // Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
+    const bip = bf - so - bb - hbp;
+    if (bip > 0) {
+      const expectedHR = bip * 0.035;
+      totals.xFIP = Math.round(((13 * expectedHR + 3 * (bb + hbp) - 2 * so) / ip + fipConstant) * 100) / 100;
+    }
   }
 
   return totals;
