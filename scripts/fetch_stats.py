@@ -143,13 +143,42 @@ def format_batting(stat: dict) -> dict:
 
     # Derived stats
     pa, bb, so = result.get('PA', 0), result.get('BB', 0), result.get('SO', 0)
+    h = result.get('H', 0)
+    ab = result.get('AB', 0)
+    hbp = result.get('HBP', 0)
+    doubles = result.get('2B', 0)
+    triples = result.get('3B', 0)
+    hr = result.get('HR', 0)
+    sf = result.get('SF', 0)
+
     if pa > 0:
-        result['BB%'] = round(100 * bb / pa, 1)
-        result['K%'] = round(100 * so / pa, 1)
+        # Store as decimals (0.155 = 15.5%) for consistent formatting
+        result['BB%'] = round(bb / pa, 3)
+        result['K%'] = round(so / pa, 3)
+
+        # wOBA using linear weights (2024 values approximation)
+        singles = h - doubles - triples - hr
+        woba_num = 0.69 * bb + 0.72 * hbp + 0.88 * singles + 1.24 * doubles + 1.56 * triples + 1.95 * hr
+        result['wOBA'] = round(woba_num / pa, 3)
 
     avg, slg = result.get('AVG', 0), result.get('SLG', 0)
     if isinstance(avg, (int, float)) and isinstance(slg, (int, float)):
         result['ISO'] = round(slg - avg, 3)
+
+    # BABIP = (H - HR) / (AB - SO - HR + SF)
+    babip_denom = ab - so - hr + sf
+    if babip_denom > 0:
+        result['BABIP'] = round((h - hr) / babip_denom, 3)
+
+    # wRC+ approximation using wOBA
+    # wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
+    # Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
+    if 'wOBA' in result:
+        lg_woba = 0.315
+        woba_scale = 1.15
+        lg_r_per_pa = 0.11
+        wrc_plus = ((result['wOBA'] - lg_woba) / woba_scale + lg_r_per_pa) / lg_r_per_pa * 100
+        result['wRC+'] = round(wrc_plus)
 
     return result
 
@@ -179,10 +208,33 @@ def format_pitching(stat: dict) -> dict:
 
     # Derived stats
     h, bb, so, hbp = result.get('H', 0), result.get('BB', 0), result.get('SO', 0), result.get('HBP', 0)
+    hr = result.get('HR', 0)
+    ip = result.get('IP', 0)
     bf = h + bb + so + hbp
+
     if bf > 0:
-        result['K%'] = round(100 * so / bf, 1)
-        result['BB%'] = round(100 * bb / bf, 1)
+        # Store as decimals (0.255 = 25.5%) for consistent formatting
+        result['K%'] = round(so / bf, 3)
+        result['BB%'] = round(bb / bf, 3)
+
+        # BABIP for pitchers = (H - HR) / (BF - SO - HR - BB - HBP)
+        babip_denom = bf - so - hr - bb - hbp
+        if babip_denom > 0:
+            result['BABIP'] = round((h - hr) / babip_denom, 3)
+
+    # FIP = ((13*HR) + (3*(BB+HBP)) - (2*SO)) / IP + constant
+    if ip > 0:
+        fip_constant = 3.10
+        result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
+
+        # xFIP uses league average HR/FB rate instead of actual HR
+        # Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
+        # BIP (Balls In Play) = BF - SO - BB - HBP
+        # Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
+        bip = bf - so - bb - hbp
+        if bip > 0:
+            expected_hr = bip * 0.035
+            result['xFIP'] = round((13 * expected_hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
 
     return result
 
@@ -279,8 +331,29 @@ def aggregate_batting_stats(stats_list: list[dict]) -> dict:
         result['OPS'] = round(result['OBP'] + result['SLG'], 3)
 
     if pa > 0:
-        result['BB%'] = round(100 * bb / pa, 1)
-        result['K%'] = round(100 * so / pa, 1)
+        # Store as decimals (0.155 = 15.5%) for consistent formatting
+        result['BB%'] = round(bb / pa, 3)
+        result['K%'] = round(so / pa, 3)
+
+        # wOBA using linear weights (2024 values approximation)
+        singles = h - doubles - triples - hr
+        woba_num = 0.69 * bb + 0.72 * hbp + 0.88 * singles + 1.24 * doubles + 1.56 * triples + 1.95 * hr
+        result['wOBA'] = round(woba_num / pa, 3)
+
+    # BABIP = (H - HR) / (AB - SO - HR + SF)
+    babip_denom = ab - so - hr + sf
+    if babip_denom > 0:
+        result['BABIP'] = round((h - hr) / babip_denom, 3)
+
+    # wRC+ approximation using wOBA
+    # wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
+    # Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
+    if 'wOBA' in result:
+        lg_woba = 0.315
+        woba_scale = 1.15
+        lg_r_per_pa = 0.11
+        wrc_plus = ((result['wOBA'] - lg_woba) / woba_scale + lg_r_per_pa) / lg_r_per_pa * 100
+        result['wRC+'] = round(wrc_plus)
 
     return result
 
@@ -331,8 +404,28 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
 
     bf = h + bb + so + hbp
     if bf > 0:
-        result['K%'] = round(100 * so / bf, 1)
-        result['BB%'] = round(100 * bb / bf, 1)
+        # Store as decimals (0.255 = 25.5%) for consistent formatting
+        result['K%'] = round(so / bf, 3)
+        result['BB%'] = round(bb / bf, 3)
+
+        # BABIP for pitchers = (H - HR) / (BF - SO - HR - BB - HBP)
+        babip_denom = bf - so - hr - bb - hbp
+        if babip_denom > 0:
+            result['BABIP'] = round((h - hr) / babip_denom, 3)
+
+    # FIP = ((13*HR) + (3*(BB+HBP)) - (2*SO)) / IP + constant
+    if innings > 0:
+        fip_constant = 3.10
+        result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / innings + fip_constant, 2)
+
+        # xFIP uses league average HR/FB rate instead of actual HR
+        # Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
+        # BIP (Balls In Play) = BF - SO - BB - HBP
+        # Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
+        bip = bf - so - bb - hbp
+        if bip > 0:
+            expected_hr = bip * 0.035
+            result['xFIP'] = round((13 * expected_hr + 3 * (bb + hbp) - 2 * so) / innings + fip_constant, 2)
 
     return result
 

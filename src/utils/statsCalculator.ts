@@ -119,12 +119,38 @@ export function aggregateBattingStats(games: GameLogEntry[]): BattingStats | und
 
   if (pa > 0) {
     totals.OBP = Math.round(((h + bb + hbp) / pa) * 1000) / 1000;
-    totals['BB%'] = Math.round((100 * bb / pa) * 10) / 10;
-    totals['K%'] = Math.round((100 * so / pa) * 10) / 10;
+    // Store BB% and K% as decimals (0.155 = 15.5%) for consistent formatting
+    totals['BB%'] = Math.round((bb / pa) * 1000) / 1000;
+    totals['K%'] = Math.round((so / pa) * 1000) / 1000;
+
+    // wOBA calculation using linear weights (2024 values approximation)
+    // wOBA = (0.69*uBB + 0.72*HBP + 0.88*1B + 1.24*2B + 1.56*3B + 1.95*HR) / PA
+    const singles = h - doubles - triples - hr;
+    const wobaNum = 0.69 * bb + 0.72 * hbp + 0.88 * singles + 1.24 * doubles + 1.56 * triples + 1.95 * hr;
+    totals.wOBA = Math.round((wobaNum / pa) * 1000) / 1000;
   }
 
   if (totals.OBP !== undefined && totals.SLG !== undefined) {
     totals.OPS = Math.round((totals.OBP + totals.SLG) * 1000) / 1000;
+  }
+
+  // BABIP = (H - HR) / (AB - SO - HR + SF)
+  // Only calculate if denominator is meaningful
+  const sf = totals.SF || 0;
+  const babipDenom = ab - so - hr + sf;
+  if (babipDenom > 0) {
+    totals.BABIP = Math.round(((h - hr) / babipDenom) * 1000) / 1000;
+  }
+
+  // wRC+ approximation using wOBA
+  // wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
+  // Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
+  if (totals.wOBA !== undefined) {
+    const lgwOBA = 0.315;
+    const wOBAscale = 1.15;
+    const lgRperPA = 0.11;
+    const wrcPlus = ((totals.wOBA - lgwOBA) / wOBAscale + lgRperPA) / lgRperPA * 100;
+    totals['wRC+'] = Math.round(wrcPlus);
   }
 
   return totals;
@@ -177,14 +203,38 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
   }
 
   // K% and BB% based on estimated batters faced
+  // Store as decimals (0.255 = 25.5%) for consistent formatting
   const bf = h + bb + so + hbp;
   if (bf > 0) {
-    totals['K%'] = Math.round((100 * so / bf) * 10) / 10;
-    totals['BB%'] = Math.round((100 * bb / bf) * 10) / 10;
+    totals['K%'] = Math.round((so / bf) * 1000) / 1000;
+    totals['BB%'] = Math.round((bb / bf) * 1000) / 1000;
+
+    // BABIP for pitchers = (H - HR) / (BF - SO - HR - BB - HBP)
+    const babipDenom = bf - so - hr - bb - hbp;
+    if (babipDenom > 0) {
+      totals.BABIP = Math.round(((h - hr) / babipDenom) * 1000) / 1000;
+    }
   }
 
   if (so > 0 && bb > 0) {
     totals['K/BB'] = Math.round((so / bb) * 100) / 100;
+  }
+
+  // FIP = ((13*HR) + (3*(BB+HBP)) - (2*SO)) / IP + FIP constant
+  // Using 3.10 as an approximation of the FIP constant
+  if (ip > 0) {
+    const fipConstant = 3.10;
+    totals.FIP = Math.round(((13 * hr + 3 * (bb + hbp) - 2 * so) / ip + fipConstant) * 100) / 100;
+
+    // xFIP uses league average HR/FB rate instead of actual HR
+    // Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
+    // BIP (Balls In Play) = BF - SO - BB - HBP
+    // Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
+    const bip = bf - so - bb - hbp;
+    if (bip > 0) {
+      const expectedHR = bip * 0.035;
+      totals.xFIP = Math.round(((13 * expectedHR + 3 * (bb + hbp) - 2 * so) / ip + fipConstant) * 100) / 100;
+    }
   }
 
   return totals;
