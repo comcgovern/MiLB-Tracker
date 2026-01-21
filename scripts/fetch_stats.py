@@ -50,8 +50,8 @@ def fetch_player_stats_from_api(player_id: int, year: int) -> Optional[dict]:
     url = f'{MLB_STATS_API_BASE}/people/{player_id}/stats'
     params = {
         'season': year,
-        'stats': 'season,gameLog',
-        'group': 'hitting,pitching',
+        'stats': ['season', 'gameLog'],
+        'group': ['hitting', 'pitching'],
     }
 
     try:
