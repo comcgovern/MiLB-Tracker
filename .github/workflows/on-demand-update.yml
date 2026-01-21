@@ -13,6 +13,9 @@ on:
         default: 'true'
         type: boolean
 
+permissions:
+  contents: write
+
 jobs:
   update-specific-players:
     runs-on: ubuntu-latest
