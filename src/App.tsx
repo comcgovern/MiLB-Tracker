@@ -8,7 +8,6 @@ import { StatsTable } from './components/StatsTable';
 import { AddTeamModal } from './components/AddTeamModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { DateRangeModal } from './components/DateRangeModal';
-import { SearchNewPlayerModal } from './components/SearchNewPlayerModal';
 import { GameLogModal } from './components/GameLogModal';
 
 function App() {
@@ -45,7 +44,6 @@ function App() {
       {/* Modals */}
       <AddTeamModal />
       <AddPlayerModal />
-      <SearchNewPlayerModal />
       <DateRangeModal
         isOpen={isDateRangeModalOpen}
         onClose={closeDateRangeModal}

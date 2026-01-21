@@ -1,16 +1,5 @@
 {
-  "lastUpdated": "2026-01-17T12:00:00Z",
-  "batters": {
-    "sa3014981": {
-      "EV": 92.5,
-      "LA": 12.3,
-      "Barrel%": 8.5,
-      "HardHit%": 42.1,
-      "xBA": 0.285,
-      "xSLG": 0.475,
-      "xwOBA": 0.365,
-      "SprintSpeed": 27.8
-    }
-  },
+  "lastUpdated": "",
+  "batters": {},
   "pitchers": {}
 }
