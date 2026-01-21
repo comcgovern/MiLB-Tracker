@@ -334,11 +334,6 @@ function PlayerRow({
           <span className="font-medium text-gray-900 dark:text-white">
             {player.name}
           </span>
-          {player.type === 'pitcher' && (
-            <span className="text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
-              P
-            </span>
-          )}
           {player.inRegistry && (
             <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded">
               Has Stats
