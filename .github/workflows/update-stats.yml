@@ -18,6 +18,11 @@ on:
         required: false
         default: ''
         type: string
+      include_last_season:
+        description: 'Also fetch stats for previous season'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: write
@@ -51,7 +56,8 @@ jobs:
           python scripts/fetch_stats.py \
             --year 2025 \
             ${{ github.event.inputs.force_full_refresh == 'true' && '--no-cache' || '' }} \
-            ${{ github.event.inputs.specific_players && format('--players {0}', github.event.inputs.specific_players) || '' }}
+            ${{ github.event.inputs.specific_players && format('--players {0}', github.event.inputs.specific_players) || '' }} \
+            ${{ github.event.inputs.include_last_season == 'true' && '--include-last-season' || '' }}
         env:
           PYTHONUNBUFFERED: '1'
 

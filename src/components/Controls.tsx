@@ -9,6 +9,7 @@ const SPLIT_OPTIONS: { value: Split; label: string }[] = [
   { value: 'last14', label: 'Last 14 Days' },
   { value: 'last30', label: 'Last 30 Days' },
   { value: 'season', label: 'Season' },
+  { value: 'lastSeason', label: 'Last Season' },
 ];
 
 export function Controls() {

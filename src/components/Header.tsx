@@ -5,7 +5,7 @@ import { DataStatusIndicator } from './DataStatusIndicator';
 
 export function Header() {
   const { darkMode, toggleDarkMode } = useSettingsStore();
-  const { searchQuery, setSearchQuery, openSettingsModal } = useUIStore();
+  const { openSettingsModal } = useUIStore();
 
   return (
     <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
@@ -17,15 +17,6 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search players..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="input w-64"
-          />
-
           {/* Dark mode toggle */}
           <button
             onClick={toggleDarkMode}
