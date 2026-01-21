@@ -5,13 +5,26 @@ import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
 import { useTeamPlayers } from '../hooks/useTeamPlayers';
 import { PlayerStatsTable } from './PlayerStatsTable';
-import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player } from '../types';
+import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player, PlayerIndex } from '../types';
 import { getPlayerId } from '../types';
 
 async function fetchPlayers(): Promise<PlayersRegistry> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
   const response = await fetch(`${basePath}/data/players.json`);
-  if (!response.ok) throw new Error('Failed to fetch players');
+  if (!response.ok) {
+    // Return empty registry if not found
+    return { players: [], lastUpdated: '' };
+  }
+  return response.json();
+}
+
+async function fetchPlayerIndex(): Promise<PlayerIndex> {
+  const basePath = import.meta.env.VITE_BASE_PATH || '';
+  const response = await fetch(`${basePath}/data/player-index.json`);
+  if (!response.ok) {
+    // Return empty index if not found
+    return { players: [], year: new Date().getFullYear(), lastUpdated: '', count: 0 };
+  }
   return response.json();
 }
 
@@ -23,7 +36,10 @@ async function fetchStats(): Promise<StatsFile> {
   if (!response.ok) {
     response = await fetch(`${basePath}/data/stats/${year - 1}.json`);
   }
-  if (!response.ok) throw new Error('Failed to fetch stats');
+  if (!response.ok) {
+    // Return empty stats if not found
+    return {};
+  }
   return response.json();
 }
 
@@ -37,23 +53,29 @@ export function StatsTable() {
     [activeTeamId]
   );
 
-  // Fetch player registry
+  // Fetch player registry (for players with stats)
   const {
     data: playersRegistry,
     isLoading: playersLoading,
-    isError: playersError,
-    refetch: refetchPlayers
   } = useQuery({
     queryKey: ['players'],
     queryFn: fetchPlayers,
+  });
+
+  // Fetch player index (for all MiLB players - fallback for player info)
+  const {
+    data: playerIndex,
+    isLoading: indexLoading,
+  } = useQuery({
+    queryKey: ['player-index'],
+    queryFn: fetchPlayerIndex,
+    staleTime: 1000 * 60 * 60, // 1 hour
   });
 
   // Fetch stats
   const {
     data: statsData,
     isLoading: statsLoading,
-    isError: statsError,
-    refetch: refetchStats
   } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
@@ -69,40 +91,36 @@ export function StatsTable() {
     openGameLog(player);
   };
 
+  // Helper to find player info from registry or index
+  const findPlayerInfo = (playerId: string): Player | undefined => {
+    // First try registry (has stats)
+    const registryPlayer = playersRegistry?.players.find((p) => getPlayerId(p) === playerId);
+    if (registryPlayer) return registryPlayer;
+
+    // Fall back to player index
+    const indexPlayer = playerIndex?.players.find((p) => getPlayerId(p) === playerId);
+    if (indexPlayer) {
+      // Convert IndexedPlayer to Player format
+      return {
+        mlbId: indexPlayer.mlbId,
+        name: indexPlayer.name,
+        team: indexPlayer.team,
+        org: indexPlayer.org,
+        level: indexPlayer.level as Player['level'],
+        position: indexPlayer.position,
+        hasStatcast: false,
+      };
+    }
+
+    return undefined;
+  };
+
   // Loading state
-  if (playersLoading || statsLoading) {
+  if (playersLoading || statsLoading || indexLoading) {
     return (
       <div className="p-8 text-center">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mb-4" />
         <p className="text-gray-500 dark:text-gray-400">Loading stats...</p>
-      </div>
-    );
-  }
-
-  // Error state
-  if (playersError || statsError) {
-    return (
-      <div className="p-8 text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-          <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <p className="text-red-600 dark:text-red-400 font-medium mb-2">
-          Failed to load data
-        </p>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">
-          {playersError ? 'Could not load player registry.' : 'Could not load stats data.'}
-        </p>
-        <button
-          onClick={() => {
-            if (playersError) refetchPlayers();
-            if (statsError) refetchStats();
-          }}
-          className="btn-primary"
-        >
-          Try Again
-        </button>
       </div>
     );
   }
@@ -131,8 +149,8 @@ export function StatsTable() {
   }[] = [];
 
   teamPlayers.forEach((tp) => {
-    // Find player by ID (supports both mlbId and legacy fangraphsId)
-    const player = playersRegistry?.players.find((p) => getPlayerId(p) === tp.playerId);
+    // Find player by ID from registry or index
+    const player = findPlayerInfo(tp.playerId);
     const playerStats = statsData?.[tp.playerId];
 
     // Determine if batter or pitcher based on stats data
