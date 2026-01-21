@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/fetch_stats.py
-Fetch MiLB stats using the MLB Stats API and save to JSON files.
+Fetch MiLB stats using the MLB Stats API directly and save to JSON files.
 """
 
 import argparse
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from mlbstatsapi import Mlb
+import requests
 
 # Configure logging
 logging.basicConfig(
@@ -28,8 +28,10 @@ STATS_DIR = DATA_DIR / 'stats'
 GAME_LOGS_DIR = DATA_DIR / 'game-logs'
 PLAYERS_FILE = DATA_DIR / 'players.json'
 
-# Rate limiting
+# API Configuration
+MLB_STATS_API_BASE = 'https://statsapi.mlb.com/api/v1'
 REQUEST_DELAY = 1.0  # seconds between requests
+REQUEST_TIMEOUT = 30  # seconds
 
 
 def load_players() -> dict:
@@ -47,90 +49,95 @@ def save_players(data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
-def fetch_player_stats(mlb: Mlb, player_id: int, year: int) -> Optional[dict]:
-    """Fetch season stats for a player."""
-    try:
-        # Get season stats for both hitting and pitching
-        stats_data = mlb.get_player_stats(
-            player_id,
-            stats=['season', 'gameLog'],
-            groups=['hitting', 'pitching'],
-            season=year
-        )
+def fetch_player_stats_from_api(player_id: int, year: int) -> Optional[dict]:
+    """Fetch season stats for a player directly from MLB Stats API."""
+    url = f'{MLB_STATS_API_BASE}/people/{player_id}/stats'
+    params = {
+        'season': year,
+        'stats': ['season', 'gameLog'],
+        'group': ['hitting', 'pitching'],
+    }
 
-        if not stats_data:
+    try:
+        logger.debug(f"Fetching: {url} with params {params}")
+        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        logger.debug(f"API response status: {response.status_code}")
+
+        if 'stats' not in data or not data['stats']:
+            logger.debug(f"Player {player_id}: No stats in API response")
             return None
 
-        result = {
-            'playerId': str(player_id),
-            'season': year,
-            'lastUpdated': datetime.now().isoformat(),
-        }
+        return parse_stats_response(player_id, year, data['stats'])
 
-        # Process hitting stats
-        if 'hitting' in stats_data:
-            hitting = stats_data['hitting']
-
-            # Season totals
-            if 'season' in hitting and hitting['season']:
-                season_stats = hitting['season']
-                if hasattr(season_stats, 'splits') and season_stats.splits:
-                    split = season_stats.splits[0]
-                    if hasattr(split, 'stat'):
-                        result['batting'] = extract_batting_stats(split.stat)
-                        result['type'] = 'batter'
-
-            # Game logs
-            if 'gamelog' in hitting and hitting['gamelog']:
-                game_log = hitting['gamelog']
-                if hasattr(game_log, 'splits') and game_log.splits:
-                    result['battingGameLog'] = [
-                        extract_game_log_entry(split, 'batting')
-                        for split in game_log.splits
-                    ]
-
-        # Process pitching stats
-        if 'pitching' in stats_data:
-            pitching = stats_data['pitching']
-
-            # Season totals
-            if 'season' in pitching and pitching['season']:
-                season_stats = pitching['season']
-                if hasattr(season_stats, 'splits') and season_stats.splits:
-                    split = season_stats.splits[0]
-                    if hasattr(split, 'stat'):
-                        result['pitching'] = extract_pitching_stats(split.stat)
-                        # Only set type to pitcher if no batting stats
-                        if 'type' not in result:
-                            result['type'] = 'pitcher'
-
-            # Game logs
-            if 'gamelog' in pitching and pitching['gamelog']:
-                game_log = pitching['gamelog']
-                if hasattr(game_log, 'splits') and game_log.splits:
-                    result['pitchingGameLog'] = [
-                        extract_game_log_entry(split, 'pitching')
-                        for split in game_log.splits
-                    ]
-
-        # Calculate splits from game logs
-        if 'battingGameLog' in result:
-            result['battingSplits'] = calculate_batting_splits(result['battingGameLog'])
-        if 'pitchingGameLog' in result:
-            result['pitchingSplits'] = calculate_pitching_splits(result['pitchingGameLog'])
-
-        return result if 'batting' in result or 'pitching' in result else None
-
-    except Exception as e:
+    except requests.RequestException as e:
         logger.warning(f"Failed to fetch stats for player {player_id}: {e}")
+        return None
+    except (KeyError, ValueError) as e:
+        logger.warning(f"Failed to parse stats for player {player_id}: {e}")
         return None
 
 
-def extract_batting_stats(stat) -> dict:
-    """Extract batting stats from a stat object."""
+def parse_stats_response(player_id: int, year: int, stats_list: list) -> Optional[dict]:
+    """Parse the raw stats response from MLB API."""
+    result = {
+        'playerId': str(player_id),
+        'season': year,
+        'lastUpdated': datetime.now().isoformat(),
+    }
+
+    for stat_group in stats_list:
+        group_name = stat_group.get('group', {}).get('displayName', '')
+        stat_type = stat_group.get('type', {}).get('displayName', '')
+        splits = stat_group.get('splits', [])
+
+        logger.debug(f"Processing group={group_name}, type={stat_type}, splits_count={len(splits)}")
+
+        if not splits:
+            continue
+
+        if group_name == 'hitting':
+            if stat_type == 'season':
+                # Take the first split for season totals
+                stat_data = splits[0].get('stat', {})
+                if stat_data:
+                    result['batting'] = extract_batting_stats(stat_data)
+                    result['type'] = 'batter'
+            elif stat_type == 'gameLog':
+                result['battingGameLog'] = [
+                    extract_game_log_entry(split, 'batting') for split in splits
+                ]
+
+        elif group_name == 'pitching':
+            if stat_type == 'season':
+                stat_data = splits[0].get('stat', {})
+                if stat_data:
+                    result['pitching'] = extract_pitching_stats(stat_data)
+                    if 'type' not in result:
+                        result['type'] = 'pitcher'
+            elif stat_type == 'gameLog':
+                result['pitchingGameLog'] = [
+                    extract_game_log_entry(split, 'pitching') for split in splits
+                ]
+
+    # Calculate splits from game logs
+    if 'battingGameLog' in result:
+        result['battingSplits'] = calculate_batting_splits(result['battingGameLog'])
+    if 'pitchingGameLog' in result:
+        result['pitchingSplits'] = calculate_pitching_splits(result['pitchingGameLog'])
+
+    has_stats = 'batting' in result or 'pitching' in result
+    if not has_stats:
+        logger.debug(f"Player {player_id}: No batting or pitching stats found in response")
+
+    return result if has_stats else None
+
+
+def extract_batting_stats(stat: dict) -> dict:
+    """Extract batting stats from a stat dictionary."""
     stats = {}
 
-    # Map stat attributes to our format
     stat_mapping = {
         'gamesPlayed': 'G',
         'plateAppearances': 'PA',
@@ -156,7 +163,7 @@ def extract_batting_stats(stat) -> dict:
     }
 
     for api_name, our_name in stat_mapping.items():
-        val = getattr(stat, api_name, None)
+        val = stat.get(api_name)
         if val is not None:
             # Convert string percentages to floats
             if isinstance(val, str) and val.startswith('.'):
@@ -184,8 +191,8 @@ def extract_batting_stats(stat) -> dict:
     return stats
 
 
-def extract_pitching_stats(stat) -> dict:
-    """Extract pitching stats from a stat object."""
+def extract_pitching_stats(stat: dict) -> dict:
+    """Extract pitching stats from a stat dictionary."""
     stats = {}
 
     stat_mapping = {
@@ -213,7 +220,7 @@ def extract_pitching_stats(stat) -> dict:
     }
 
     for api_name, our_name in stat_mapping.items():
-        val = getattr(stat, api_name, None)
+        val = stat.get(api_name)
         if val is not None:
             stats[our_name] = val
 
@@ -239,26 +246,26 @@ def extract_pitching_stats(stat) -> dict:
     return stats
 
 
-def extract_game_log_entry(split, stat_type: str) -> dict:
+def extract_game_log_entry(split: dict, stat_type: str) -> dict:
     """Extract a single game log entry."""
     entry = {}
 
     # Get game info
-    if hasattr(split, 'date'):
-        entry['date'] = split.date
-    if hasattr(split, 'game') and split.game:
-        entry['gameId'] = split.game.gamepk if hasattr(split.game, 'gamepk') else None
-    if hasattr(split, 'opponent') and split.opponent:
-        entry['opponent'] = split.opponent.name if hasattr(split.opponent, 'name') else str(split.opponent)
-    if hasattr(split, 'ishome'):
-        entry['isHome'] = split.ishome
+    if 'date' in split:
+        entry['date'] = split['date']
+    if 'game' in split and split['game']:
+        entry['gameId'] = split['game'].get('gamePk')
+    if 'opponent' in split and split['opponent']:
+        entry['opponent'] = split['opponent'].get('name', str(split['opponent']))
+    if 'isHome' in split:
+        entry['isHome'] = split['isHome']
 
     # Get stats
-    if hasattr(split, 'stat'):
+    if 'stat' in split:
         if stat_type == 'batting':
-            entry['stats'] = extract_batting_stats(split.stat)
+            entry['stats'] = extract_batting_stats(split['stat'])
         else:
-            entry['stats'] = extract_pitching_stats(split.stat)
+            entry['stats'] = extract_pitching_stats(split['stat'])
 
     return entry
 
@@ -403,9 +410,10 @@ def aggregate_pitching_stats(stats_list: list) -> dict:
     return totals
 
 
-def fetch_all_players(mlb: Mlb, player_ids: list[str], year: int, use_cache: bool = True) -> dict:
+def fetch_all_players(player_ids: list[str], year: int, use_cache: bool = True) -> dict:
     """Fetch stats for all specified players."""
     all_stats = {}
+    stats_saved = 0
 
     # Load existing data if using cache
     stats_file = STATS_DIR / f'{year}.json'
@@ -422,15 +430,19 @@ def fetch_all_players(mlb: Mlb, player_ids: list[str], year: int, use_cache: boo
         logger.info(f"Fetching stats for player {player_id}...")
 
         try:
-            stats = fetch_player_stats(mlb, int(player_id), year)
+            stats = fetch_player_stats_from_api(int(player_id), year)
             if stats:
                 all_stats[player_id] = stats
+                stats_saved += 1
+                logger.info(f"Player {player_id}: Found {stats.get('type', 'unknown')} stats")
 
                 # Save game logs separately
                 if 'battingGameLog' in stats:
                     save_game_logs(player_id, stats['battingGameLog'], 'batting')
                 if 'pitchingGameLog' in stats:
                     save_game_logs(player_id, stats['pitchingGameLog'], 'pitching')
+            else:
+                logger.info(f"Player {player_id}: No stats available for {year}")
 
         except Exception as e:
             logger.warning(f"Error fetching player {player_id}: {e}")
@@ -444,7 +456,7 @@ def fetch_all_players(mlb: Mlb, player_ids: list[str], year: int, use_cache: boo
     with open(stats_file, 'w') as f:
         json.dump(all_stats, f, indent=2, default=str)
 
-    logger.info(f"Saved stats for {len(all_stats)} players")
+    logger.info(f"Saved stats for {len(all_stats)} total players ({stats_saved} new)")
     return all_stats
 
 
@@ -466,10 +478,12 @@ def main():
                         help='Ignore cached data and refresh all')
     parser.add_argument('--include-last-season', action='store_true',
                         help='Also fetch stats for the previous season')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug logging')
     args = parser.parse_args()
 
-    # Initialize MLB API client
-    mlb = Mlb()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     # Get player list
     if args.players:
@@ -490,13 +504,13 @@ def main():
     logger.info(f"Fetching stats for {len(player_ids)} players (year={args.year})")
 
     # Fetch stats for current year
-    fetch_all_players(mlb, player_ids, args.year, use_cache=not args.no_cache)
+    fetch_all_players(player_ids, args.year, use_cache=not args.no_cache)
 
     # Optionally fetch last season stats
     if args.include_last_season:
         last_year = args.year - 1
         logger.info(f"Fetching last season stats for {len(player_ids)} players (year={last_year})")
-        fetch_all_players(mlb, player_ids, last_year, use_cache=not args.no_cache)
+        fetch_all_players(player_ids, last_year, use_cache=not args.no_cache)
 
     logger.info("Done!")
 
