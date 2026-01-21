@@ -92,6 +92,14 @@ def get_roster_with_stats(client: APIClient, team_id: int, season: int) -> Optio
     })
 
 
+def safe_float(val: str) -> Optional[float]:
+    """Convert string to float, returning None for placeholder values like '-.--'."""
+    try:
+        return float(val)
+    except ValueError:
+        return None
+
+
 def format_batting(stat: dict) -> dict:
     """Format batting stats."""
     fields = {
@@ -107,7 +115,12 @@ def format_batting(stat: dict) -> dict:
     for api_key, our_key in fields.items():
         val = stat.get(api_key)
         if val is not None:
-            result[our_key] = float(val) if isinstance(val, str) else val
+            if isinstance(val, str):
+                converted = safe_float(val)
+                if converted is not None:
+                    result[our_key] = converted
+            else:
+                result[our_key] = val
 
     # Derived stats
     pa, bb, so = result.get('PA', 0), result.get('BB', 0), result.get('SO', 0)
@@ -137,7 +150,12 @@ def format_pitching(stat: dict) -> dict:
     for api_key, our_key in fields.items():
         val = stat.get(api_key)
         if val is not None:
-            result[our_key] = float(val) if isinstance(val, str) else val
+            if isinstance(val, str):
+                converted = safe_float(val)
+                if converted is not None:
+                    result[our_key] = converted
+            else:
+                result[our_key] = val
 
     # Derived stats
     h, bb, so, hbp = result.get('H', 0), result.get('BB', 0), result.get('SO', 0), result.get('HBP', 0)
