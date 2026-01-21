@@ -39,35 +39,61 @@ async function fetchPlayerIndex(): Promise<PlayerIndex> {
   return response.json();
 }
 
+// Helper to determine which year's stats file is being used as "current"
+async function getCurrentSeasonYear(): Promise<number | null> {
+  const basePath = import.meta.env.VITE_BASE_PATH || '';
+  const year = new Date().getFullYear();
+
+  // Check current year first
+  const currentYearResponse = await fetch(`${basePath}/data/stats/${year}.json`, { method: 'HEAD' });
+  if (currentYearResponse.ok) {
+    return year;
+  }
+
+  // Fall back to previous year
+  const prevYearResponse = await fetch(`${basePath}/data/stats/${year - 1}.json`, { method: 'HEAD' });
+  if (prevYearResponse.ok) {
+    return year - 1;
+  }
+
+  return null;
+}
+
 async function fetchStats(): Promise<StatsFile> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
   const year = new Date().getFullYear();
+
   // Try current year first, fall back to previous year
   let response = await fetch(`${basePath}/data/stats/${year}.json`);
-  if (!response.ok) {
-    response = await fetch(`${basePath}/data/stats/${year - 1}.json`);
+  if (response.ok) {
+    return response.json();
   }
-  if (!response.ok) {
-    // Return empty stats if not found
-    return {};
+
+  response = await fetch(`${basePath}/data/stats/${year - 1}.json`);
+  if (response.ok) {
+    return response.json();
   }
-  return response.json();
+
+  // Return empty stats if not found
+  return {};
 }
 
 async function fetchLastSeasonStats(): Promise<StatsFile> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
-  const year = new Date().getFullYear();
 
-  // Check if current year stats exist to determine what "last season" means
-  const currentYearResponse = await fetch(`${basePath}/data/stats/${year}.json`, { method: 'HEAD' });
+  // First, determine which year is being shown as "current season"
+  const currentYear = await getCurrentSeasonYear();
+  if (currentYear === null) {
+    // No current season data found
+    return {};
+  }
 
-  // If current year exists, last season is year-1
-  // If current year doesn't exist (we're showing year-1 as "current"), last season is year-2
-  const lastYear = currentYearResponse.ok ? year - 1 : year - 2;
+  // Last season is the year before whatever we're showing as "current"
+  const lastYear = currentYear - 1;
 
   const response = await fetch(`${basePath}/data/stats/${lastYear}.json`);
   if (!response.ok) {
-    // Return empty stats if not found
+    // Return empty stats if not found (e.g., no 2024 data when viewing 2025)
     return {};
   }
   return response.json();
