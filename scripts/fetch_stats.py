@@ -495,8 +495,10 @@ def extract_player_stats(player_id: str, hitting_data: Optional[dict], pitching_
     # Store batting data
     if has_batting:
         result['battingByLevel'] = batting_by_level
-        # Create MiLB totals if multiple levels
-        if len(batting_by_level) > 1:
+        # Use MiLB totals from API if available, otherwise aggregate non-MiLB levels
+        if 'MiLB' in batting_by_level:
+            result['batting'] = batting_by_level['MiLB']
+        elif len(batting_by_level) > 1:
             result['batting'] = aggregate_batting_stats(list(batting_by_level.values()))
         else:
             # Single level - use that as the total
@@ -506,8 +508,10 @@ def extract_player_stats(player_id: str, hitting_data: Optional[dict], pitching_
     # Store pitching data
     if has_pitching:
         result['pitchingByLevel'] = pitching_by_level
-        # Create MiLB totals if multiple levels
-        if len(pitching_by_level) > 1:
+        # Use MiLB totals from API if available, otherwise aggregate non-MiLB levels
+        if 'MiLB' in pitching_by_level:
+            result['pitching'] = pitching_by_level['MiLB']
+        elif len(pitching_by_level) > 1:
             result['pitching'] = aggregate_pitching_stats(list(pitching_by_level.values()))
         else:
             # Single level - use that as the total
