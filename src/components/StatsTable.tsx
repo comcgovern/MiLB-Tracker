@@ -5,7 +5,7 @@ import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
 import { useTeamPlayers } from '../hooks/useTeamPlayers';
 import { PlayerStatsTable } from './PlayerStatsTable';
-import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, Split } from '../types';
+import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player, PlayerIndex } from '../types';
 import { getPlayerId } from '../types';
 import {
   calculateStatsForSplit,
