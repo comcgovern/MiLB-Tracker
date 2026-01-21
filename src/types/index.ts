@@ -122,13 +122,22 @@ export interface PitchingStats {
   'Whiff%'?: number;
 }
 
+export type MiLBLevel = 'AAA' | 'AA' | 'A+' | 'A' | 'CPX' | 'MiLB';
+
 export interface GameLogEntry {
   date: string;
   gameId?: number;
   opponent?: string;
+  team?: string;
   isHome?: boolean;
+  level?: MiLBLevel;
   stats: BattingStats | PitchingStats;
 }
+
+// Stats by level mapping
+export type StatsByLevel<T> = {
+  [level in MiLBLevel]?: T;
+};
 
 // Stats data format from Python scripts
 export interface PlayerStatsData {
@@ -138,7 +147,8 @@ export interface PlayerStatsData {
   type: 'batter' | 'pitcher';
 
   // Batting data (if batter)
-  batting?: BattingStats;
+  batting?: BattingStats;  // Total MiLB stats
+  battingByLevel?: StatsByLevel<BattingStats>;  // Stats broken down by level
   battingSplits?: {
     yesterday?: BattingStats;
     today?: BattingStats;
@@ -149,7 +159,8 @@ export interface PlayerStatsData {
   battingGameLog?: GameLogEntry[];
 
   // Pitching data (if pitcher)
-  pitching?: PitchingStats;
+  pitching?: PitchingStats;  // Total MiLB stats
+  pitchingByLevel?: StatsByLevel<PitchingStats>;  // Stats broken down by level
   pitchingSplits?: {
     yesterday?: PitchingStats;
     today?: PitchingStats;
