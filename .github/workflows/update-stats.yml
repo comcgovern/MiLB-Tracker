@@ -69,7 +69,7 @@ jobs:
 
       - name: Update metadata
         run: |
-          echo '{"lastUpdated": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "playerCount": '$(jq -r '.players | length' data/players.json)'}' > data/meta.json
+          echo '{"lastUpdated": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "playerCount": '$(jq -r '.players | length' data/player-index.json)'}' > data/meta.json
 
       - name: Commit and push changes
         run: |

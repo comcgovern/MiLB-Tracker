@@ -1,4 +1,8 @@
-name: Add Player
+name: Add Player (DEPRECATED - Use player index instead)
+
+# NOTE: This workflow is deprecated. Stats are now automatically fetched for all
+# players in player-index.json. To add a player, they just need to be in the
+# player index, which is rebuilt weekly via build-player-index.yml.
 
 on:
   workflow_dispatch:
