@@ -1,0 +1,80 @@
+name: Debug Fetch Players
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (default: current year)'
+        required: false
+        type: string
+      player_id:
+        description: 'Optional: Fetch a specific player by ID'
+        required: false
+        type: string
+      player_name:
+        description: 'Name for the custom player (if player_id provided)'
+        required: false
+        type: string
+        default: 'Custom Player'
+      save_stats:
+        description: 'Save fetched stats to the stats file'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  debug-fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run debug fetch script
+        run: |
+          python scripts/debug_fetch_players.py \
+            ${{ github.event.inputs.season && format('--season {0}', github.event.inputs.season) || '' }} \
+            ${{ github.event.inputs.player_id && format('--player-id {0}', github.event.inputs.player_id) || '' }} \
+            ${{ github.event.inputs.player_name && format('--player-name "{0}"', github.event.inputs.player_name) || '' }} \
+            ${{ github.event.inputs.save_stats == 'true' && '--save' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Commit changes
+        if: ${{ github.event.inputs.save_stats == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            COMMIT_MSG="Debug fetch stats"
+            if [ -n "${{ github.event.inputs.player_id }}" ]; then
+              COMMIT_MSG="$COMMIT_MSG for player ${{ github.event.inputs.player_id }}"
+            fi
+            if [ -n "${{ github.event.inputs.season }}" ]; then
+              COMMIT_MSG="$COMMIT_MSG (season ${{ github.event.inputs.season }})"
+            fi
+            git commit -m "$COMMIT_MSG"
+            git push
+          fi
