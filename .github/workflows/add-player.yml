@@ -40,6 +40,9 @@ on:
         default: true
         type: boolean
 
+permissions:
+  contents: write
+
 jobs:
   add-player:
     runs-on: ubuntu-latest
