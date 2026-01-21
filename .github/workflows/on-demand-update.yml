@@ -37,7 +37,8 @@ jobs:
         run: |
           python scripts/fetch_stats.py \
             --players "${{ github.event.inputs.player_ids }}" \
-            --no-cache
+            --no-cache \
+            --debug
 
       - name: Fetch Statcast (if enabled)
         if: ${{ github.event.inputs.include_statcast == 'true' }}

@@ -55,6 +55,7 @@ jobs:
         run: |
           python scripts/fetch_stats.py \
             --year 2025 \
+            --debug \
             ${{ github.event.inputs.force_full_refresh == 'true' && '--no-cache' || '' }} \
             ${{ github.event.inputs.specific_players && format('--players {0}', github.event.inputs.specific_players) || '' }} \
             ${{ github.event.inputs.include_last_season == 'true' && '--include-last-season' || '' }}
