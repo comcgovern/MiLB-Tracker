@@ -51,7 +51,15 @@ async function fetchStats(): Promise<StatsFile> {
 
 async function fetchLastSeasonStats(): Promise<StatsFile> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
-  const lastYear = new Date().getFullYear() - 1;
+  const year = new Date().getFullYear();
+
+  // Check if current year stats exist to determine what "last season" means
+  const currentYearResponse = await fetch(`${basePath}/data/stats/${year}.json`, { method: 'HEAD' });
+
+  // If current year exists, last season is year-1
+  // If current year doesn't exist (we're showing year-1 as "current"), last season is year-2
+  const lastYear = currentYearResponse.ok ? year - 1 : year - 2;
+
   const response = await fetch(`${basePath}/data/stats/${lastYear}.json`);
   if (!response.ok) {
     // Return empty stats if not found

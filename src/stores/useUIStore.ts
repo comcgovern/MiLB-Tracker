@@ -33,7 +33,7 @@ interface UIStore {
 
 export const useUIStore = create<UIStore>((set) => ({
   activeTeamId: null,
-  activeSplit: 'yesterday',
+  activeSplit: 'season',
   isAddPlayerModalOpen: false,
   isAddTeamModalOpen: false,
   isSettingsModalOpen: false,
