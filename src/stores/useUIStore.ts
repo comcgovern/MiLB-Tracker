@@ -73,7 +73,7 @@ export const useUIStore = create<UIStore>((set) => ({
     set({ isDateRangeModalOpen: false }),
 
   setCustomDateRange: (start, end) =>
-    set({ customDateRange: { start, end } }),
+    set({ customDateRange: { start, end }, activeSplit: 'custom' }),
 
   clearCustomDateRange: () =>
     set({ customDateRange: null }),

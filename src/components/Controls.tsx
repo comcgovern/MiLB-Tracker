@@ -10,10 +10,20 @@ const SPLIT_OPTIONS: { value: Split; label: string }[] = [
   { value: 'last30', label: 'Last 30 Days' },
   { value: 'season', label: 'Season' },
   { value: 'lastSeason', label: 'Last Season' },
+  { value: 'custom', label: 'Custom Range' },
 ];
 
 export function Controls() {
   const { activeSplit, setActiveSplit, openAddPlayerModal, openDateRangeModal, customDateRange } = useUIStore();
+
+  const handleSplitChange = (split: Split) => {
+    if (split === 'custom' && !customDateRange) {
+      // Open date picker if selecting custom without a range set
+      openDateRangeModal();
+    } else {
+      setActiveSplit(split);
+    }
+  };
 
   return (
     <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
@@ -26,7 +36,7 @@ export function Controls() {
             </label>
             <select
               value={activeSplit}
-              onChange={(e) => setActiveSplit(e.target.value as Split)}
+              onChange={(e) => handleSplitChange(e.target.value as Split)}
               className="input"
             >
               {SPLIT_OPTIONS.map((option) => (

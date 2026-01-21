@@ -5,8 +5,14 @@ import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
 import { useTeamPlayers } from '../hooks/useTeamPlayers';
 import { PlayerStatsTable } from './PlayerStatsTable';
-import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player, PlayerIndex } from '../types';
+import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, Split } from '../types';
 import { getPlayerId } from '../types';
+import {
+  calculateStatsForSplit,
+  createDateRange,
+  calculateStatsForDateRange,
+  type PresetSplit,
+} from '../utils/statsCalculator';
 
 async function fetchPlayers(): Promise<PlayersRegistry> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
@@ -55,7 +61,7 @@ async function fetchLastSeasonStats(): Promise<StatsFile> {
 }
 
 export function StatsTable() {
-  const { activeTeamId, activeSplit, openGameLog } = useUIStore();
+  const { activeTeamId, activeSplit, customDateRange, openGameLog } = useUIStore();
   const { removePlayerFromTeam } = useTeamPlayers(activeTeamId);
 
   // Fetch team players from IndexedDB
@@ -206,27 +212,29 @@ export function StatsTable() {
       // Batter stats
       if (activeSplit === 'season' || activeSplit === 'lastSeason') {
         stats = playerStats?.batting;
-      } else if (
-        activeSplit === 'yesterday' ||
-        activeSplit === 'today' ||
-        activeSplit === 'last7' ||
-        activeSplit === 'last14' ||
-        activeSplit === 'last30'
-      ) {
-        stats = playerStats?.battingSplits?.[activeSplit];
+      } else if (activeSplit === 'custom' && customDateRange) {
+        // Custom date range - calculate from game logs
+        const range = createDateRange(customDateRange.start, customDateRange.end);
+        if (range) {
+          stats = calculateStatsForDateRange(playerStats?.battingGameLog, range, 'batting');
+        }
+      } else {
+        // Preset splits (yesterday, today, last7, etc.) - calculate from game logs
+        stats = calculateStatsForSplit(playerStats?.battingGameLog, activeSplit as PresetSplit, 'batting');
       }
     } else {
       // Pitcher stats
       if (activeSplit === 'season' || activeSplit === 'lastSeason') {
         stats = playerStats?.pitching;
-      } else if (
-        activeSplit === 'yesterday' ||
-        activeSplit === 'today' ||
-        activeSplit === 'last7' ||
-        activeSplit === 'last14' ||
-        activeSplit === 'last30'
-      ) {
-        stats = playerStats?.pitchingSplits?.[activeSplit];
+      } else if (activeSplit === 'custom' && customDateRange) {
+        // Custom date range - calculate from game logs
+        const range = createDateRange(customDateRange.start, customDateRange.end);
+        if (range) {
+          stats = calculateStatsForDateRange(playerStats?.pitchingGameLog, range, 'pitching');
+        }
+      } else {
+        // Preset splits (yesterday, today, last7, etc.) - calculate from game logs
+        stats = calculateStatsForSplit(playerStats?.pitchingGameLog, activeSplit as PresetSplit, 'pitching');
       }
     }
 

@@ -160,7 +160,12 @@ export interface PlayerStatsData {
   pitchingGameLog?: GameLogEntry[];
 }
 
-export type Split = 'season' | 'lastSeason' | 'last7' | 'last14' | 'last30' | 'today' | 'yesterday';
+export type Split = 'season' | 'lastSeason' | 'last7' | 'last14' | 'last30' | 'today' | 'yesterday' | 'custom';
+
+export interface CustomDateRange {
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+}
 
 export interface PlayersRegistry {
   players: Player[];
