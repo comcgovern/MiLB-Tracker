@@ -92,27 +92,36 @@ export function StatsTable() {
   };
 
   // Helper to find player info from registry or index
-  const findPlayerInfo = (playerId: string): Player | undefined => {
+  // Returns player info and type (from index if available)
+  const findPlayerInfo = (playerId: string): { player: Player | undefined; indexType?: 'batter' | 'pitcher' } => {
     // First try registry (has stats)
     const registryPlayer = playersRegistry?.players.find((p) => getPlayerId(p) === playerId);
-    if (registryPlayer) return registryPlayer;
+
+    // Also check index for type info
+    const indexPlayer = playerIndex?.players.find((p) => getPlayerId(p) === playerId);
+
+    if (registryPlayer) {
+      return { player: registryPlayer, indexType: indexPlayer?.type };
+    }
 
     // Fall back to player index
-    const indexPlayer = playerIndex?.players.find((p) => getPlayerId(p) === playerId);
     if (indexPlayer) {
       // Convert IndexedPlayer to Player format
       return {
-        mlbId: indexPlayer.mlbId,
-        name: indexPlayer.name,
-        team: indexPlayer.team,
-        org: indexPlayer.org,
-        level: indexPlayer.level as Player['level'],
-        position: indexPlayer.position,
-        hasStatcast: false,
+        player: {
+          mlbId: indexPlayer.mlbId,
+          name: indexPlayer.name,
+          team: indexPlayer.team,
+          org: indexPlayer.org,
+          level: indexPlayer.level as Player['level'],
+          position: indexPlayer.position,
+          hasStatcast: false,
+        },
+        indexType: indexPlayer.type,
       };
     }
 
-    return undefined;
+    return { player: undefined };
   };
 
   // Loading state
@@ -150,12 +159,16 @@ export function StatsTable() {
 
   teamPlayers.forEach((tp) => {
     // Find player by ID from registry or index
-    const player = findPlayerInfo(tp.playerId);
+    const { player, indexType } = findPlayerInfo(tp.playerId);
     const playerStats = statsData?.[tp.playerId];
 
-    // Determine if batter or pitcher based on stats data
-    const isBatter = playerStats?.type === 'batter' || !!playerStats?.batting;
-    const isPitcher = playerStats?.type === 'pitcher' || !!playerStats?.pitching;
+    // Determine if batter or pitcher based on stats data, then fall back to index type
+    const isBatterFromStats = playerStats?.type === 'batter' || !!playerStats?.batting;
+    const isPitcherFromStats = playerStats?.type === 'pitcher' || !!playerStats?.pitching;
+
+    // Use index type as fallback when no stats available
+    const isPitcher = isPitcherFromStats || (!playerStats && indexType === 'pitcher');
+    const isBatter = isBatterFromStats || (!playerStats && indexType === 'batter');
 
     // Get stats based on active split and player type
     let stats: BattingStats | PitchingStats | undefined;

@@ -128,6 +128,14 @@ export function PlayerStatsTable({
                           SC
                         </span>
                       )}
+                      {!stats && (
+                        <span
+                          className="text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-1.5 py-0.5 rounded"
+                          title="Stats will be available in the next scheduled update"
+                        >
+                          Pending
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
