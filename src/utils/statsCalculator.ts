@@ -2,7 +2,10 @@
 // Calculate time-based splits from game logs on demand
 // This ensures splits are always accurate relative to the current date
 
-import type { BattingStats, PitchingStats, GameLogEntry } from '../types';
+import type { BattingStats, PitchingStats, GameLogEntry, MiLBLevel } from '../types';
+
+// Level display order (highest to lowest)
+export const LEVEL_ORDER: MiLBLevel[] = ['AAA', 'AA', 'A+', 'A', 'CPX', 'MiLB'];
 
 export interface DateRange {
   start: Date;
@@ -234,4 +237,76 @@ export function createDateRange(startDate: string, endDate: string): DateRange |
   if (start > end) return null;
 
   return { start, end };
+}
+
+// Get unique levels from game logs
+export function getLevelsFromGameLogs(gameLogs: GameLogEntry[] | undefined): MiLBLevel[] {
+  if (!gameLogs || gameLogs.length === 0) return [];
+
+  const levels = new Set<MiLBLevel>();
+  for (const game of gameLogs) {
+    if (game.level) {
+      levels.add(game.level);
+    }
+  }
+
+  // Sort by level order (highest to lowest)
+  return LEVEL_ORDER.filter(level => levels.has(level));
+}
+
+// Filter game logs by level
+export function filterGameLogsByLevel(
+  gameLogs: GameLogEntry[],
+  level: MiLBLevel
+): GameLogEntry[] {
+  return gameLogs.filter(game => game.level === level);
+}
+
+// Calculate stats for a specific level
+export function calculateStatsForLevel(
+  gameLogs: GameLogEntry[] | undefined,
+  level: MiLBLevel,
+  type: 'batting' | 'pitching'
+): BattingStats | PitchingStats | undefined {
+  if (!gameLogs || gameLogs.length === 0) return undefined;
+
+  const filtered = filterGameLogsByLevel(gameLogs, level);
+  if (filtered.length === 0) return undefined;
+
+  return type === 'batting'
+    ? aggregateBattingStats(filtered)
+    : aggregatePitchingStats(filtered);
+}
+
+// Calculate stats for a specific level and date range
+export function calculateStatsForLevelAndDateRange(
+  gameLogs: GameLogEntry[] | undefined,
+  level: MiLBLevel,
+  range: DateRange,
+  type: 'batting' | 'pitching'
+): BattingStats | PitchingStats | undefined {
+  if (!gameLogs || gameLogs.length === 0) return undefined;
+
+  // Filter by both level and date range
+  const filteredByLevel = filterGameLogsByLevel(gameLogs, level);
+  const filteredByDate = filterGameLogsByDateRange(filteredByLevel, range);
+
+  if (filteredByDate.length === 0) return undefined;
+
+  return type === 'batting'
+    ? aggregateBattingStats(filteredByDate)
+    : aggregatePitchingStats(filteredByDate);
+}
+
+// Calculate stats for a specific level and preset split
+export function calculateStatsForLevelAndSplit(
+  gameLogs: GameLogEntry[] | undefined,
+  level: MiLBLevel,
+  split: PresetSplit,
+  type: 'batting' | 'pitching'
+): BattingStats | PitchingStats | undefined {
+  const range = getPresetDateRange(split);
+  if (!range) return undefined; // Season splits don't use this
+
+  return calculateStatsForLevelAndDateRange(gameLogs, level, range, type);
 }
