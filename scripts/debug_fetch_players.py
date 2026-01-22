@@ -8,8 +8,7 @@ It fetches stats for a predefined list of players and prints detailed output.
 Usage:
     python scripts/debug_fetch_players.py
     python scripts/debug_fetch_players.py --season 2024
-    python scripts/debug_fetch_players.py --save  # Save to stats file
-    python scripts/debug_fetch_players.py --month 6  # Save to June file
+    python scripts/debug_fetch_players.py --save  # Save to monthly stats files
 """
 
 import argparse
@@ -85,10 +84,8 @@ def main():
     parser = argparse.ArgumentParser(description='Debug fetch MiLB stats for specific players')
     parser.add_argument('--season', type=int, default=datetime.now().year,
                         help='Season year (default: current year)')
-    parser.add_argument('--month', type=int, default=None,
-                        help='Month to save (default: current month)')
     parser.add_argument('--save', action='store_true',
-                        help='Save fetched stats to the stats file (merges with existing)')
+                        help='Save fetched stats to monthly stats files (merges with existing)')
     parser.add_argument('--player-id', type=int,
                         help='Fetch a specific player by ID (in addition to debug list)')
     parser.add_argument('--player-name', type=str, default='Custom Player',
@@ -139,46 +136,45 @@ def main():
 
     # Save if requested (using monthly file structure)
     if args.save and all_stats:
-        # Determine which month to save to
-        if args.month:
-            month = args.month
-        else:
-            month = datetime.now().month
-            if month not in SEASON_MONTHS:
-                print(f"\nWarning: Month {month} is outside season (April-September)")
-                print("Use --month to specify a different month")
-                month = SEASON_MONTHS[-1]  # Default to September
-
         year_dir = STATS_DIR / str(args.season)
         year_dir.mkdir(parents=True, exist_ok=True)
-        month_file = year_dir / f'{month:02d}.json'
 
-        # Load existing stats and merge
-        existing_players = {}
-        if month_file.exists():
-            with open(month_file) as f:
-                data = json.load(f)
-                existing_players = data.get('players', {})
-            print(f"\nLoaded {len(existing_players)} existing players from {month_file}")
+        print(f"\nSaving stats to monthly files for {args.season}...")
+        months_saved = []
 
-        # Filter stats to just this month and merge
-        for player_id, player_stats in all_stats.items():
-            month_stats = filter_player_stats_by_month(player_stats, args.season, month)
-            if month_stats:
-                existing_players[player_id] = month_stats
+        # Loop through all season months and save stats for each
+        for month in SEASON_MONTHS:
+            month_file = year_dir / f'{month:02d}.json'
 
-        # Save
-        output = {
-            'year': args.season,
-            'month': month,
-            'updated': datetime.now().isoformat(),
-            'players': existing_players,
-        }
+            # Load existing stats
+            existing_players = {}
+            if month_file.exists():
+                with open(month_file) as f:
+                    data = json.load(f)
+                    existing_players = data.get('players', {})
 
-        with open(month_file, 'w') as f:
-            json.dump(output, f, separators=(',', ':'))
+            # Filter stats to just this month and merge
+            month_player_count = 0
+            for player_id, player_stats in all_stats.items():
+                month_stats = filter_player_stats_by_month(player_stats, args.season, month)
+                if month_stats:
+                    existing_players[player_id] = month_stats
+                    month_player_count += 1
 
-        print(f"Saved {len(existing_players)} total players to {month_file}")
+            # Only save if we have stats for this month
+            if month_player_count > 0:
+                output = {
+                    'year': args.season,
+                    'month': month,
+                    'updated': datetime.now().isoformat(),
+                    'players': existing_players,
+                }
+
+                with open(month_file, 'w') as f:
+                    json.dump(output, f, separators=(',', ':'))
+
+                print(f"  Month {month:02d}: Saved {month_player_count} new players ({len(existing_players)} total)")
+                months_saved.append(month)
 
         # Update manifest
         existing_months = [
@@ -187,6 +183,8 @@ def main():
         ]
         if existing_months:
             update_manifest(args.season, existing_months)
+
+        print(f"\nSaved stats to {len(months_saved)} monthly files")
 
     print("\nDone!")
 

@@ -7,10 +7,6 @@ on:
         description: 'Season year (default: current year)'
         required: false
         type: string
-      month:
-        description: 'Month to save (1-12, default: current month)'
-        required: false
-        type: string
       player_id:
         description: 'Optional: Fetch a specific player by ID'
         required: false
@@ -54,7 +50,6 @@ jobs:
         run: |
           python scripts/debug_fetch_players.py \
             ${{ github.event.inputs.season && format('--season {0}', github.event.inputs.season) || '' }} \
-            ${{ github.event.inputs.month && format('--month {0}', github.event.inputs.month) || '' }} \
             ${{ github.event.inputs.player_id && format('--player-id {0}', github.event.inputs.player_id) || '' }} \
             ${{ github.event.inputs.player_name && format('--player-name "{0}"', github.event.inputs.player_name) || '' }} \
             ${{ github.event.inputs.save_stats == 'true' && '--save' || '' }}
