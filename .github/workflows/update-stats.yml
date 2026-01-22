@@ -46,8 +46,9 @@ jobs:
         run: |
           pip install -r scripts/requirements.txt
 
-      - name: Fetch player stats
+      - name: Fetch player stats (current month)
         run: |
+          # Fetch MiLB stats and save to monthly file: data/stats/{year}/{month}.json
           python scripts/fetch_stats.py \
             --season 2025 \
             ${{ github.event.inputs.debug == 'true' && '--debug' || '' }} \
