@@ -46,8 +46,9 @@ jobs:
         run: |
           pip install -r scripts/requirements.txt
 
-      - name: Fetch player stats
+      - name: Fetch player stats (current month)
         run: |
+          # Fetch MiLB stats and save to monthly file: data/stats/{year}/{month}.json
           python scripts/fetch_stats.py \
             --season 2025 \
             ${{ github.event.inputs.debug == 'true' && '--debug' || '' }} \
@@ -55,8 +56,10 @@ jobs:
         env:
           PYTHONUNBUFFERED: '1'
 
-      - name: Fetch Statcast data
+      - name: Fetch Statcast data (current month)
         run: |
+          # Fetch Statcast data for current month only (stored in monthly files)
+          # Note: Statcast data is only available for AAA and Florida State League
           python scripts/fetch_statcast.py --year 2025
         continue-on-error: true  # Statcast sometimes unavailable
 

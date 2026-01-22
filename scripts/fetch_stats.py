@@ -5,13 +5,12 @@ Fetch MiLB stats using the MLB Stats API.
 This script fetches stats ONLY for minor league play using leagueListId=milb_all.
 Stats include level information (A, A+, AA, AAA) for displaying splits by level.
 
-Data stored:
-  - Season totals by level (batting/pitching)
-  - Raw game logs with level info (for frontend to calculate splits)
-  - Aggregated MiLB totals
+Data is stored in monthly files to avoid GitHub's file size limits:
+  data/stats/{year}/{month}.json  - Player data for that month
+  data/stats/{year}/manifest.json - Lists available months
 
 Time-based splits (last7, last14, etc.) are calculated in the frontend
-so they're always accurate relative to the current date.
+by loading and aggregating the relevant monthly files.
 """
 
 import argparse
@@ -58,6 +57,9 @@ SPORT_ID_TO_LEVEL = {v: k for k, v in MILB_SPORT_IDS.items()}
 
 # Level display order (highest to lowest)
 LEVEL_ORDER = ['AAA', 'AA', 'A+', 'A', 'CPX', 'MiLB']
+
+# Season months (April = 4 through September = 9)
+SEASON_MONTHS = [4, 5, 6, 7, 8, 9]
 
 
 class APIClient:
@@ -152,11 +154,9 @@ def format_batting(stat: dict) -> dict:
     sf = result.get('SF', 0)
 
     if pa > 0:
-        # Store as decimals (0.155 = 15.5%) for consistent formatting
         result['BB%'] = round(bb / pa, 3)
         result['K%'] = round(so / pa, 3)
 
-        # wOBA using linear weights (2024 values approximation)
         singles = h - doubles - triples - hr
         woba_num = 0.69 * bb + 0.72 * hbp + 0.88 * singles + 1.24 * doubles + 1.56 * triples + 1.95 * hr
         result['wOBA'] = round(woba_num / pa, 3)
@@ -165,14 +165,10 @@ def format_batting(stat: dict) -> dict:
     if isinstance(avg, (int, float)) and isinstance(slg, (int, float)):
         result['ISO'] = round(slg - avg, 3)
 
-    # BABIP = (H - HR) / (AB - SO - HR + SF)
     babip_denom = ab - so - hr + sf
     if babip_denom > 0:
         result['BABIP'] = round((h - hr) / babip_denom, 3)
 
-    # wRC+ approximation using wOBA
-    # wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
-    # Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
     if 'wOBA' in result:
         lg_woba = 0.315
         woba_scale = 1.15
@@ -206,31 +202,23 @@ def format_pitching(stat: dict) -> dict:
             else:
                 result[our_key] = val
 
-    # Derived stats
     h, bb, so, hbp = result.get('H', 0), result.get('BB', 0), result.get('SO', 0), result.get('HBP', 0)
     hr = result.get('HR', 0)
     ip = result.get('IP', 0)
     bf = h + bb + so + hbp
 
     if bf > 0:
-        # Store as decimals (0.255 = 25.5%) for consistent formatting
         result['K%'] = round(so / bf, 3)
         result['BB%'] = round(bb / bf, 3)
 
-        # BABIP for pitchers = (H - HR) / (BF - SO - HR - BB - HBP)
         babip_denom = bf - so - hr - bb - hbp
         if babip_denom > 0:
             result['BABIP'] = round((h - hr) / babip_denom, 3)
 
-    # FIP = ((13*HR) + (3*(BB+HBP)) - (2*SO)) / IP + constant
     if ip > 0:
         fip_constant = 3.10
         result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
 
-        # xFIP uses league average HR/FB rate instead of actual HR
-        # Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
-        # BIP (Balls In Play) = BF - SO - BB - HBP
-        # Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
         bip = bf - so - bb - hbp
         if bip > 0:
             expected_hr = bip * 0.035
@@ -241,34 +229,30 @@ def format_pitching(stat: dict) -> dict:
 
 def get_level_from_split(split: dict) -> str:
     """Extract level (A, A+, AA, AAA, CPX) from a split's team/league info."""
-    # Try sport first (most reliable)
     sport = split.get('sport', {})
     sport_id = sport.get('id')
     if sport_id and sport_id in SPORT_ID_TO_LEVEL:
         return SPORT_ID_TO_LEVEL[sport_id]
 
-    # Try team's sport
     team = split.get('team', {})
     team_sport = team.get('sport', {})
     team_sport_id = team_sport.get('id')
     if team_sport_id and team_sport_id in SPORT_ID_TO_LEVEL:
         return SPORT_ID_TO_LEVEL[team_sport_id]
 
-    # Try league abbreviation
     league = split.get('league', {}) or team.get('league', {})
     league_abbr = league.get('abbreviation', '')
     if league_abbr:
-        # Map common league abbreviations to levels
-        if 'INT' in league_abbr or 'PCL' in league_abbr:  # International League, Pacific Coast League
+        if 'INT' in league_abbr or 'PCL' in league_abbr:
             return 'AAA'
-        elif league_abbr in ['EL', 'SL', 'TL']:  # Eastern, Southern, Texas League
+        elif league_abbr in ['EL', 'SL', 'TL']:
             return 'AA'
-        elif league_abbr in ['SAL', 'MWL', 'CAL', 'FSL', 'CPL']:  # High-A leagues
+        elif league_abbr in ['SAL', 'MWL', 'CAL', 'FSL', 'CPL']:
             return 'A+'
-        elif league_abbr in ['CAR', 'SALL']:  # Single-A leagues
+        elif league_abbr in ['CAR', 'SALL']:
             return 'A'
 
-    return 'MiLB'  # Default fallback
+    return 'MiLB'
 
 
 def format_game_log(split: dict, stat_type: str) -> dict:
@@ -310,7 +294,6 @@ def aggregate_batting_stats(stats_list: list[dict]) -> dict:
 
     result = dict(totals)
 
-    # Calculate rate stats
     ab, h = result.get('AB', 0), result.get('H', 0)
     bb, hbp = result.get('BB', 0), result.get('HBP', 0)
     sf = result.get('SF', 0)
@@ -331,23 +314,17 @@ def aggregate_batting_stats(stats_list: list[dict]) -> dict:
         result['OPS'] = round(result['OBP'] + result['SLG'], 3)
 
     if pa > 0:
-        # Store as decimals (0.155 = 15.5%) for consistent formatting
         result['BB%'] = round(bb / pa, 3)
         result['K%'] = round(so / pa, 3)
 
-        # wOBA using linear weights (2024 values approximation)
         singles = h - doubles - triples - hr
         woba_num = 0.69 * bb + 0.72 * hbp + 0.88 * singles + 1.24 * doubles + 1.56 * triples + 1.95 * hr
         result['wOBA'] = round(woba_num / pa, 3)
 
-    # BABIP = (H - HR) / (AB - SO - HR + SF)
     babip_denom = ab - so - hr + sf
     if babip_denom > 0:
         result['BABIP'] = round((h - hr) / babip_denom, 3)
 
-    # wRC+ approximation using wOBA
-    # wRC+ = ((wOBA - lgwOBA) / wOBAscale + lgR/PA) / lgR/PA * 100
-    # Using MiLB approximations: lgwOBA=0.315, wOBAscale=1.15, lgR/PA=0.11
     if 'wOBA' in result:
         lg_woba = 0.315
         woba_scale = 1.15
@@ -369,11 +346,9 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
     for stats in stats_list:
         for key in counting:
             totals[key] += stats.get(key, 0)
-        # Handle IP (stored as decimal where .1 = 1/3, .2 = 2/3)
         ip = stats.get('IP', 0)
         if isinstance(ip, str):
             ip = float(ip) if ip else 0.0
-        # Convert to outs then back to proper decimal
         whole = int(ip)
         partial = ip - whole
         outs = whole * 3 + int(round(partial * 10))
@@ -381,18 +356,16 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
 
     result = dict(totals)
 
-    # Convert outs back to IP
     ip_whole = total_ip // 3
     ip_partial = total_ip % 3
     result['IP'] = round(ip_whole + ip_partial / 10, 1)
 
-    # Calculate rate stats
     ip = result['IP']
     er, h, bb, so, hr = result.get('ER', 0), result.get('H', 0), result.get('BB', 0), result.get('SO', 0), result.get('HR', 0)
     hbp = result.get('HBP', 0)
 
     if ip > 0:
-        innings = ip_whole + ip_partial / 3  # Actual innings for calculations
+        innings = ip_whole + ip_partial / 3
         result['ERA'] = round(9 * er / innings, 2)
         result['WHIP'] = round((bb + h) / innings, 2)
         result['K/9'] = round(9 * so / innings, 1)
@@ -404,24 +377,18 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
 
     bf = h + bb + so + hbp
     if bf > 0:
-        # Store as decimals (0.255 = 25.5%) for consistent formatting
         result['K%'] = round(so / bf, 3)
         result['BB%'] = round(bb / bf, 3)
 
-        # BABIP for pitchers = (H - HR) / (BF - SO - HR - BB - HBP)
         babip_denom = bf - so - hr - bb - hbp
         if babip_denom > 0:
             result['BABIP'] = round((h - hr) / babip_denom, 3)
 
-    # FIP = ((13*HR) + (3*(BB+HBP)) - (2*SO)) / IP + constant
-    if innings > 0:
+    if ip > 0:
+        innings = ip_whole + ip_partial / 3
         fip_constant = 3.10
         result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / innings + fip_constant, 2)
 
-        # xFIP uses league average HR/FB rate instead of actual HR
-        # Since we don't have FB data, we estimate: BIP * lgFB% * lgHR/FB
-        # BIP (Balls In Play) = BF - SO - BB - HBP
-        # Using lgFB% = 35%, lgHR/FB = 10%, so expected HR = BIP * 0.035
         bip = bf - so - bb - hbp
         if bip > 0:
             expected_hr = bip * 0.035
@@ -430,21 +397,32 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
     return result
 
 
-def extract_player_stats(player_id: str, hitting_data: Optional[dict], pitching_data: Optional[dict], season: int) -> Optional[dict]:
-    """Extract and organize stats from API response, grouped by level."""
+def aggregate_game_logs_by_level(game_logs: list[dict], stat_type: str) -> dict:
+    """Aggregate game logs into stats by level."""
+    by_level = defaultdict(list)
+
+    for log in game_logs:
+        level = log.get('level', 'MiLB')
+        if 'stats' in log:
+            by_level[level].append(log['stats'])
+
+    aggregator = aggregate_batting_stats if stat_type == 'batting' else aggregate_pitching_stats
+    return {level: aggregator(stats) for level, stats in by_level.items() if stats}
+
+
+def extract_player_stats_full(player_id: str, hitting_data: Optional[dict], pitching_data: Optional[dict], season: int) -> Optional[dict]:
+    """Extract full player stats including all game logs."""
     result = {
         'playerId': player_id,
         'season': season,
         'lastUpdated': datetime.now().isoformat(),
     }
 
-    # Track stats by level for aggregation
     batting_by_level = {}
     pitching_by_level = {}
     batting_game_logs = []
     pitching_game_logs = []
 
-    # Process hitting stats
     if hitting_data:
         for stat_group in hitting_data.get('stats', []):
             stat_type = stat_group.get('type', {}).get('displayName', '')
@@ -459,7 +437,6 @@ def extract_player_stats(player_id: str, hitting_data: Optional[dict], pitching_
                 for split in splits:
                     batting_game_logs.append(format_game_log(split, 'batting'))
 
-    # Process pitching stats
     if pitching_data:
         for stat_group in pitching_data.get('stats', []):
             stat_type = stat_group.get('type', {}).get('displayName', '')
@@ -474,16 +451,13 @@ def extract_player_stats(player_id: str, hitting_data: Optional[dict], pitching_
                 for split in splits:
                     pitching_game_logs.append(format_game_log(split, 'pitching'))
 
-    # Determine player type
-    has_batting = len(batting_by_level) > 0
-    has_pitching = len(pitching_by_level) > 0
+    has_batting = len(batting_by_level) > 0 or len(batting_game_logs) > 0
+    has_pitching = len(pitching_by_level) > 0 or len(pitching_game_logs) > 0
 
     if not has_batting and not has_pitching:
         return None
 
-    # Set player type based on which stats dominate
     if has_batting and has_pitching:
-        # Two-way player or pitcher who bats - check games played
         batting_games = sum(s.get('G', 0) for s in batting_by_level.values())
         pitching_games = sum(s.get('G', 0) for s in pitching_by_level.values())
         result['type'] = 'pitcher' if pitching_games > batting_games else 'batter'
@@ -492,33 +466,70 @@ def extract_player_stats(player_id: str, hitting_data: Optional[dict], pitching_
     else:
         result['type'] = 'pitcher'
 
-    # Store batting data
     if has_batting:
         result['battingByLevel'] = batting_by_level
-        # Use MiLB totals from API if available, otherwise aggregate non-MiLB levels
         if 'MiLB' in batting_by_level:
             result['batting'] = batting_by_level['MiLB']
         elif len(batting_by_level) > 1:
             result['batting'] = aggregate_batting_stats(list(batting_by_level.values()))
-        else:
-            # Single level - use that as the total
+        elif batting_by_level:
             result['batting'] = list(batting_by_level.values())[0]
         result['battingGameLog'] = sorted(batting_game_logs, key=lambda x: x.get('date', ''))
 
-    # Store pitching data
     if has_pitching:
         result['pitchingByLevel'] = pitching_by_level
-        # Use MiLB totals from API if available, otherwise aggregate non-MiLB levels
         if 'MiLB' in pitching_by_level:
             result['pitching'] = pitching_by_level['MiLB']
         elif len(pitching_by_level) > 1:
             result['pitching'] = aggregate_pitching_stats(list(pitching_by_level.values()))
-        else:
-            # Single level - use that as the total
+        elif pitching_by_level:
             result['pitching'] = list(pitching_by_level.values())[0]
         result['pitchingGameLog'] = sorted(pitching_game_logs, key=lambda x: x.get('date', ''))
 
     return result
+
+
+def filter_player_stats_by_month(player_stats: dict, year: int, month: int) -> Optional[dict]:
+    """Filter a player's stats to only include games from a specific month."""
+    month_prefix = f"{year}-{month:02d}"
+
+    result = {
+        'playerId': player_stats['playerId'],
+        'season': year,
+        'type': player_stats.get('type', 'batter'),
+    }
+
+    # Filter batting game logs
+    if 'battingGameLog' in player_stats:
+        month_logs = [
+            log for log in player_stats['battingGameLog']
+            if log.get('date', '').startswith(month_prefix)
+        ]
+        if month_logs:
+            result['battingGameLog'] = month_logs
+            # Aggregate stats from this month's games
+            month_stats = [log['stats'] for log in month_logs if 'stats' in log]
+            if month_stats:
+                result['batting'] = aggregate_batting_stats(month_stats)
+                result['battingByLevel'] = aggregate_game_logs_by_level(month_logs, 'batting')
+
+    # Filter pitching game logs
+    if 'pitchingGameLog' in player_stats:
+        month_logs = [
+            log for log in player_stats['pitchingGameLog']
+            if log.get('date', '').startswith(month_prefix)
+        ]
+        if month_logs:
+            result['pitchingGameLog'] = month_logs
+            month_stats = [log['stats'] for log in month_logs if 'stats' in log]
+            if month_stats:
+                result['pitching'] = aggregate_pitching_stats(month_stats)
+                result['pitchingByLevel'] = aggregate_game_logs_by_level(month_logs, 'pitching')
+
+    # Only return if player has data for this month
+    if 'batting' in result or 'pitching' in result:
+        return result
+    return None
 
 
 def fetch_player_stats(client: APIClient, player_id: int, season: int) -> Optional[dict]:
@@ -526,7 +537,7 @@ def fetch_player_stats(client: APIClient, player_id: int, season: int) -> Option
     hitting_data = get_player_milb_stats(client, player_id, season, 'hitting')
     pitching_data = get_player_milb_stats(client, player_id, season, 'pitching')
 
-    return extract_player_stats(str(player_id), hitting_data, pitching_data, season)
+    return extract_player_stats_full(str(player_id), hitting_data, pitching_data, season)
 
 
 def fetch_all_players(season: int) -> set[int]:
@@ -554,7 +565,7 @@ def fetch_all_players(season: int) -> set[int]:
                 if player_id:
                     player_ids.add(player_id)
 
-            time.sleep(0.1)  # Brief pause between roster requests
+            time.sleep(0.1)
 
     logger.info(f"Found {len(player_ids)} unique players")
     return player_ids
@@ -562,7 +573,6 @@ def fetch_all_players(season: int) -> set[int]:
 
 def fetch_all_stats(season: int, max_workers: int = 10) -> dict:
     """Fetch MiLB-only stats for all players."""
-    # First get all player IDs
     player_ids = fetch_all_players(season)
 
     all_stats = {}
@@ -570,16 +580,13 @@ def fetch_all_stats(season: int, max_workers: int = 10) -> dict:
 
     logger.info(f"Fetching stats for {len(player_ids)} players...")
 
-    # Use thread pool for parallel requests
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all tasks
         future_to_player = {}
         for player_id in player_ids:
-            client = APIClient()  # New client per thread
+            client = APIClient()
             future = executor.submit(fetch_player_stats, client, player_id, season)
             future_to_player[future] = player_id
 
-        # Process results as they complete
         done = 0
         for future in as_completed(future_to_player):
             player_id = future_to_player[future]
@@ -596,19 +603,59 @@ def fetch_all_stats(season: int, max_workers: int = 10) -> dict:
                 logger.warning(f"Failed to fetch player {player_id}: {e}")
                 failed += 1
 
-            time.sleep(0.05)  # Small delay between completions
+            time.sleep(0.05)
 
     logger.info(f"Done: {len(all_stats)} players with stats, {failed} failed")
     return all_stats
 
 
-def save_stats(stats: dict, season: int) -> None:
-    """Save stats to JSON."""
-    STATS_DIR.mkdir(parents=True, exist_ok=True)
-    output = STATS_DIR / f'{season}.json'
-    with open(output, 'w') as f:
-        json.dump(stats, f, separators=(',', ':'))  # Compact JSON
-    logger.info(f"Saved to {output}")
+def save_monthly_stats(all_stats: dict, season: int, month: int) -> int:
+    """Filter and save stats for a specific month. Returns player count."""
+    year_dir = STATS_DIR / str(season)
+    year_dir.mkdir(parents=True, exist_ok=True)
+
+    month_players = {}
+    for player_id, player_stats in all_stats.items():
+        month_stats = filter_player_stats_by_month(player_stats, season, month)
+        if month_stats:
+            month_players[player_id] = month_stats
+
+    if not month_players:
+        logger.info(f"  No data for month {month}")
+        return 0
+
+    output = {
+        'year': season,
+        'month': month,
+        'updated': datetime.now().isoformat(),
+        'players': month_players,
+    }
+
+    month_file = year_dir / f'{month:02d}.json'
+    with open(month_file, 'w') as f:
+        json.dump(output, f, separators=(',', ':'))
+
+    logger.info(f"  Saved {len(month_players)} players to {month_file}")
+    return len(month_players)
+
+
+def update_manifest(season: int, months: list[int]) -> None:
+    """Update the year's manifest file."""
+    year_dir = STATS_DIR / str(season)
+    year_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_file = year_dir / 'manifest.json'
+
+    manifest = {
+        'year': season,
+        'updated': datetime.now().isoformat(),
+        'months': sorted(months),
+    }
+
+    with open(manifest_file, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    logger.info(f"Updated manifest: {manifest_file}")
 
 
 def update_meta(player_count: int) -> None:
@@ -624,6 +671,10 @@ def update_meta(player_count: int) -> None:
 def main():
     parser = argparse.ArgumentParser(description='Fetch MiLB-only stats using leagueListId filter')
     parser.add_argument('--season', type=int, default=datetime.now().year)
+    parser.add_argument('--month', type=int, default=None,
+                        help='Specific month to save (default: current month)')
+    parser.add_argument('--all-months', action='store_true',
+                        help='Save all season months (April-September)')
     parser.add_argument('--include-last-season', action='store_true')
     parser.add_argument('--workers', type=int, default=10, help='Number of parallel workers')
     parser.add_argument('--debug', action='store_true')
@@ -632,12 +683,50 @@ def main():
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Current season
+    # Determine which months to save
+    if args.month:
+        months_to_save = [args.month]
+    elif args.all_months:
+        months_to_save = SEASON_MONTHS
+    else:
+        # Default to current month
+        current_month = datetime.now().month
+        if current_month in SEASON_MONTHS:
+            months_to_save = [current_month]
+        else:
+            logger.info(f"Month {current_month} is outside season (April-September)")
+            months_to_save = []
+
+    # Fetch current season
     logger.info(f"Fetching {args.season} MiLB stats...")
-    stats = fetch_all_stats(args.season, args.workers)
-    if stats:
-        save_stats(stats, args.season)
-        update_meta(len(stats))
+    all_stats = fetch_all_stats(args.season, args.workers)
+
+    if all_stats:
+        total_players = 0
+        months_saved = []
+
+        for month in months_to_save:
+            month_name = datetime(args.season, month, 1).strftime('%B')
+            logger.info(f"Saving {month_name} {args.season}...")
+            count = save_monthly_stats(all_stats, args.season, month)
+            if count > 0:
+                months_saved.append(month)
+                total_players = max(total_players, count)
+
+        # Check for existing months in directory
+        year_dir = STATS_DIR / str(args.season)
+        if year_dir.exists():
+            existing_months = [
+                int(f.stem) for f in year_dir.glob('*.json')
+                if f.stem.isdigit()
+            ]
+            all_months = sorted(set(existing_months + months_saved))
+        else:
+            all_months = months_saved
+
+        if all_months:
+            update_manifest(args.season, all_months)
+            update_meta(len(all_stats))
 
     # Previous season (optional)
     if args.include_last_season:
@@ -645,7 +734,16 @@ def main():
         logger.info(f"Fetching {last_year} MiLB stats...")
         last_stats = fetch_all_stats(last_year, args.workers)
         if last_stats:
-            save_stats(last_stats, last_year)
+            for month in SEASON_MONTHS:
+                save_monthly_stats(last_stats, last_year, month)
+
+            year_dir = STATS_DIR / str(last_year)
+            if year_dir.exists():
+                existing_months = [
+                    int(f.stem) for f in year_dir.glob('*.json')
+                    if f.stem.isdigit()
+                ]
+                update_manifest(last_year, existing_months)
 
     logger.info("Complete!")
 

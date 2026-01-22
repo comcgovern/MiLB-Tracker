@@ -1,14 +1,14 @@
-name: Debug Fetch Players
+name: Debug Fetch Statcast
 
 on:
   workflow_dispatch:
     inputs:
-      season:
+      year:
         description: 'Season year (default: current year)'
         required: false
         type: string
       month:
-        description: 'Month to save (1-12, default: current month)'
+        description: 'Specific month (1-12, default: current month)'
         required: false
         type: string
       player_id:
@@ -20,8 +20,16 @@ on:
         required: false
         type: string
         default: 'Custom Player'
+      player_type:
+        description: 'Type of the custom player'
+        required: false
+        type: choice
+        options:
+          - batter
+          - pitcher
+        default: 'batter'
       save_stats:
-        description: 'Save fetched stats to the monthly stats file'
+        description: 'Save fetched stats to the statcast file'
         required: false
         default: false
         type: boolean
@@ -33,7 +41,7 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
-  debug-fetch:
+  debug-fetch-statcast:
     runs-on: ubuntu-latest
 
     steps:
@@ -50,13 +58,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Run debug fetch script
+      - name: Run debug Statcast fetch script
         run: |
-          python scripts/debug_fetch_players.py \
-            ${{ github.event.inputs.season && format('--season {0}', github.event.inputs.season) || '' }} \
+          python scripts/debug_fetch_statcast.py \
+            ${{ github.event.inputs.year && format('--year {0}', github.event.inputs.year) || '' }} \
             ${{ github.event.inputs.month && format('--month {0}', github.event.inputs.month) || '' }} \
             ${{ github.event.inputs.player_id && format('--player-id {0}', github.event.inputs.player_id) || '' }} \
             ${{ github.event.inputs.player_name && format('--player-name "{0}"', github.event.inputs.player_name) || '' }} \
+            ${{ github.event.inputs.player_type && format('--player-type {0}', github.event.inputs.player_type) || '' }} \
             ${{ github.event.inputs.save_stats == 'true' && '--save' || '' }}
         env:
           PYTHONUNBUFFERED: '1'
@@ -73,12 +82,15 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            COMMIT_MSG="Debug fetch stats"
+            COMMIT_MSG="Debug fetch Statcast stats"
             if [ -n "${{ github.event.inputs.player_id }}" ]; then
               COMMIT_MSG="$COMMIT_MSG for player ${{ github.event.inputs.player_id }}"
             fi
-            if [ -n "${{ github.event.inputs.season }}" ]; then
-              COMMIT_MSG="$COMMIT_MSG (season ${{ github.event.inputs.season }})"
+            if [ -n "${{ github.event.inputs.year }}" ]; then
+              COMMIT_MSG="$COMMIT_MSG (year ${{ github.event.inputs.year }})"
+            fi
+            if [ -n "${{ github.event.inputs.month }}" ]; then
+              COMMIT_MSG="$COMMIT_MSG month ${{ github.event.inputs.month }}"
             fi
             git commit -m "$COMMIT_MSG"
             git push

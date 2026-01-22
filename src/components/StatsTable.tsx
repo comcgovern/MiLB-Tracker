@@ -17,6 +17,10 @@ import {
   LEVEL_ORDER,
   type PresetSplit,
 } from '../utils/statsCalculator';
+import {
+  fetchCurrentSeasonStats,
+  fetchSeasonStats,
+} from '../utils/statsService';
 import type { MiLBLevel, StatsByLevel } from '../types';
 
 async function fetchPlayers(): Promise<PlayersRegistry> {
@@ -39,64 +43,15 @@ async function fetchPlayerIndex(): Promise<PlayerIndex> {
   return response.json();
 }
 
-// Helper to determine which year's stats file is being used as "current"
-async function getCurrentSeasonYear(): Promise<number | null> {
-  const basePath = import.meta.env.VITE_BASE_PATH || '';
-  const year = new Date().getFullYear();
-
-  // Check current year first
-  const currentYearResponse = await fetch(`${basePath}/data/stats/${year}.json`, { method: 'HEAD' });
-  if (currentYearResponse.ok) {
-    return year;
-  }
-
-  // Fall back to previous year
-  const prevYearResponse = await fetch(`${basePath}/data/stats/${year - 1}.json`, { method: 'HEAD' });
-  if (prevYearResponse.ok) {
-    return year - 1;
-  }
-
-  return null;
+// Fetch stats using the new monthly file service
+async function fetchStats(): Promise<{ stats: StatsFile; year: number }> {
+  return fetchCurrentSeasonStats();
 }
 
-async function fetchStats(): Promise<StatsFile> {
-  const basePath = import.meta.env.VITE_BASE_PATH || '';
-  const year = new Date().getFullYear();
-
-  // Try current year first, fall back to previous year
-  let response = await fetch(`${basePath}/data/stats/${year}.json`);
-  if (response.ok) {
-    return response.json();
-  }
-
-  response = await fetch(`${basePath}/data/stats/${year - 1}.json`);
-  if (response.ok) {
-    return response.json();
-  }
-
-  // Return empty stats if not found
-  return {};
-}
-
-async function fetchLastSeasonStats(): Promise<StatsFile> {
-  const basePath = import.meta.env.VITE_BASE_PATH || '';
-
-  // First, determine which year is being shown as "current season"
-  const currentYear = await getCurrentSeasonYear();
-  if (currentYear === null) {
-    // No current season data found
-    return {};
-  }
-
-  // Last season is the year before whatever we're showing as "current"
+// Fetch last season stats using the new monthly file service
+async function fetchLastSeasonStats(currentYear: number): Promise<StatsFile> {
   const lastYear = currentYear - 1;
-
-  const response = await fetch(`${basePath}/data/stats/${lastYear}.json`);
-  if (!response.ok) {
-    // Return empty stats if not found (e.g., no 2024 data when viewing 2025)
-    return {};
-  }
-  return response.json();
+  return fetchSeasonStats(lastYear);
 }
 
 export function StatsTable() {
@@ -128,22 +83,25 @@ export function StatsTable() {
     staleTime: 1000 * 60 * 60, // 1 hour
   });
 
-  // Fetch stats
+  // Fetch stats (uses monthly file service)
   const {
-    data: statsData,
+    data: statsResult,
     isLoading: statsLoading,
   } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
   });
 
-  // Fetch last season stats
+  const statsData = statsResult?.stats;
+  const currentSeasonYear = statsResult?.year ?? new Date().getFullYear();
+
+  // Fetch last season stats (uses monthly file service)
   const {
     data: lastSeasonStats,
     isLoading: lastSeasonLoading,
   } = useQuery({
-    queryKey: ['lastSeasonStats'],
-    queryFn: fetchLastSeasonStats,
+    queryKey: ['lastSeasonStats', currentSeasonYear],
+    queryFn: () => fetchLastSeasonStats(currentSeasonYear),
     enabled: activeSplit === 'lastSeason', // Only fetch when needed
   });
 
