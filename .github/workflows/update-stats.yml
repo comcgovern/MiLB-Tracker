@@ -56,12 +56,14 @@ jobs:
         env:
           PYTHONUNBUFFERED: '1'
 
-      - name: Fetch Statcast data (current month)
-        run: |
-          # Fetch Statcast data for current month only (stored in monthly files)
-          # Note: Statcast data is only available for AAA and Florida State League
-          python scripts/fetch_statcast.py --year 2025
-        continue-on-error: true  # Statcast sometimes unavailable
+      # Statcast fetching disabled - use debug-fetch-statcast workflow for testing
+      # TODO: Re-enable once filtering is verified working
+      # - name: Fetch Statcast data (current month)
+      #   run: |
+      #     # Fetch Statcast data for current month only (stored in monthly files)
+      #     # Note: Statcast data is only available for AAA and Florida State League
+      #     python scripts/fetch_statcast.py --year 2025
+      #   continue-on-error: true  # Statcast sometimes unavailable
 
       - name: Commit and push changes
         run: |
