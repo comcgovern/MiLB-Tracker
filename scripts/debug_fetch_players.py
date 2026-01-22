@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 DEBUG_PLAYERS = [
     {'id': 692478, 'name': 'Victor Arias'},
     {'id': 694346, 'name': 'Trey Gibson'},
+    {'id': 806957, 'name': 'Alfredo Duno'},
 ]
 
 

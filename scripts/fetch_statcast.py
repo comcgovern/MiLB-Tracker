@@ -1,198 +1,620 @@
 #!/usr/bin/env python3
 """
-scripts/fetch_statcast.py
-Fetch MiLB Statcast data for AAA and other tracked levels.
+Fetch MiLB Statcast data from Baseball Savant for AAA and Florida State League games.
 
-Note: Statcast data for MiLB is limited compared to MLB. The MLB Stats API
-provides basic pitch-level data for some AAA games, but full Statcast metrics
-(exit velocity, launch angle, spin rate, etc.) are only available at AAA level
-through Baseball Savant's minor league search.
+Note: MiLB Statcast data is only available for:
+  - All Triple-A (AAA) games (since 2023)
+  - Florida State League (Single-A) games
 
-This script fetches what's available through the official API and can be
-extended to scrape Baseball Savant for more detailed metrics.
+This script fetches pitch-level data from Baseball Savant's minor league search
+and aggregates it into player-level Statcast metrics.
+
+Data is stored in monthly files to avoid GitHub's file size limits:
+  data/statcast/{year}/{month}.json  - Player data for that month
+  data/statcast/{year}/manifest.json - Lists available months
 """
 
 import argparse
+import csv
+import io
 import json
 import logging
-from datetime import datetime
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
-from mlbstatsapi import Mlb
+import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent.parent / 'data'
 STATCAST_DIR = DATA_DIR / 'statcast'
-PLAYERS_FILE = DATA_DIR / 'players.json'
+STATS_DIR = DATA_DIR / 'stats'
+
+# Baseball Savant minor league search endpoint
+SAVANT_MINORS_URL = 'https://baseballsavant.mlb.com/statcast-search-minors/csv'
+
+# Request settings
+REQUEST_TIMEOUT = 120
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+
+# Season months (April = 4 through September = 9)
+SEASON_MONTHS = [4, 5, 6, 7, 8, 9]
 
 
-def load_players() -> list[dict]:
-    """Load the player registry."""
-    if PLAYERS_FILE.exists():
-        with open(PLAYERS_FILE) as f:
-            data = json.load(f)
-            return data.get('players', [])
-    return []
+def get_session() -> requests.Session:
+    """Create a session with appropriate headers."""
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/csv,application/csv,*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://baseballsavant.mlb.com/statcast-search-minors',
+    })
+    return session
 
 
-def fetch_player_game_stats(mlb: Mlb, player_id: int, game_id: int) -> dict | None:
+def fetch_statcast_csv(
+    session: requests.Session,
+    year: int,
+    start_date: str,
+    end_date: str,
+    player_type: str = 'batter',
+    level: str = 'aaa',
+) -> Optional[str]:
     """
-    Fetch detailed stats for a player in a specific game.
+    Fetch Statcast CSV data from Baseball Savant minor league search.
 
-    This uses the get_players_stats_for_game endpoint which provides
-    per-game fielding, hitting, and pitching statistics.
+    Args:
+        session: Requests session
+        year: Season year
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+        player_type: 'batter' or 'pitcher'
+        level: 'aaa' for Triple-A or 'a' for Single-A (FSL)
+
+    Returns:
+        CSV data as string, or None if request failed
     """
-    try:
-        stats = mlb.get_players_stats_for_game(player_id, game_id)
-        return stats
-    except Exception as e:
-        logger.debug(f"Failed to fetch game stats for player {player_id}, game {game_id}: {e}")
-        return None
-
-
-def fetch_player_advanced_stats(mlb: Mlb, player_id: int, year: int) -> dict | None:
-    """
-    Fetch advanced stats for a player using available stat types.
-
-    Note: Full Statcast metrics may not be available for minor league players.
-    """
-    try:
-        # Try to get advanced stats if available
-        stats = mlb.get_player_stats(
-            player_id,
-            stats=['seasonAdvanced', 'season'],
-            groups=['hitting', 'pitching'],
-            season=year
-        )
-        return stats
-    except Exception as e:
-        logger.debug(f"Failed to fetch advanced stats for player {player_id}: {e}")
-        return None
-
-
-def fetch_statcast_data(mlb: Mlb, year: int, player_ids: list[str] = None) -> dict:
-    """
-    Fetch available Statcast-like data for MiLB players.
-
-    For full Statcast metrics (exit velocity, launch angle, spin rate),
-    you would need to scrape baseballsavant.mlb.com/statcast-search-minors
-    as the MLB Stats API has limited Statcast data for minor leagues.
-    """
-    data = {
-        'lastUpdated': datetime.now().isoformat(),
-        'year': year,
-        'players': {},
-        'note': 'Limited Statcast data available for MiLB through API'
+    params = {
+        'all': 'true',
+        'hfPT': '',
+        'hfAB': '',
+        'hfGT': 'R|',
+        'hfPR': '',
+        'hfZ': '',
+        'hfStadium': '',
+        'hfBBL': '',
+        'hfNewZones': '',
+        'hfPull': '',
+        'hfC': '',
+        'hfSea': f'{year}|',
+        'hfSit': '',
+        'player_type': player_type,
+        'hfOuts': '',
+        'hfOpponent': '',
+        'pitcher_throws': '',
+        'batter_stands': '',
+        'hfSA': '',
+        'game_date_gt': start_date,
+        'game_date_lt': end_date,
+        'hfMo': '',
+        'hfTeam': '',
+        'home_road': '',
+        'hfRO': '',
+        'position': '',
+        'hfInfield': '',
+        'hfOutfield': '',
+        'hfInn': '',
+        'hfBBT': '',
+        'hfFlag': '',
+        'metric_1': '',
+        'group_by': 'name',
+        'min_pitches': '0',
+        'min_results': '0',
+        'min_pas': '0',
+        'sort_col': 'pitches',
+        'sort_order': 'desc',
+        'type': 'details',
     }
 
-    if not player_ids:
-        # Load from registry
-        players = load_players()
-        player_ids = []
-        for p in players:
-            pid = p.get('mlbId') or p.get('fangraphsId')
-            if pid:
-                player_ids.append(str(pid))
+    if level == 'aaa':
+        params['hfLevel'] = 'AAA|'
+    elif level == 'a':
+        params['hfLevel'] = 'A|'
 
-    if not player_ids:
-        logger.warning("No players specified")
-        return data
-
-    for player_id in player_ids:
+    for attempt in range(MAX_RETRIES):
         try:
-            logger.info(f"Fetching advanced stats for player {player_id}...")
-            stats = fetch_player_advanced_stats(mlb, int(player_id), year)
+            logger.debug(f"Fetching {player_type} data for {level.upper()} ({start_date} to {end_date})...")
+            resp = session.get(SAVANT_MINORS_URL, params=params, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
 
+            content = resp.text
+            if content and len(content) > 100 and 'pitch_type' in content.lower():
+                return content
+            elif 'No results' in content or len(content) < 100:
+                logger.debug(f"No data returned for {level.upper()} {player_type}")
+                return None
+            else:
+                logger.warning(f"Unexpected response format for {level.upper()} {player_type}")
+                return content
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Request failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+
+    return None
+
+
+def parse_statcast_csv(csv_data: str) -> list[dict]:
+    """Parse Statcast CSV data into list of pitch records."""
+    if not csv_data:
+        return []
+
+    records = []
+    try:
+        reader = csv.DictReader(io.StringIO(csv_data))
+        for row in reader:
+            records.append(row)
+    except Exception as e:
+        logger.warning(f"Error parsing CSV: {e}")
+
+    return records
+
+
+def safe_float(val) -> Optional[float]:
+    """Safely convert value to float."""
+    if val is None or val == '' or val == 'null':
+        return None
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
+def safe_int(val) -> Optional[int]:
+    """Safely convert value to int."""
+    if val is None or val == '' or val == 'null':
+        return None
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return None
+
+
+def aggregate_batter_statcast(records: list[dict]) -> dict:
+    """
+    Aggregate pitch-level records into batter Statcast metrics.
+
+    Metrics calculated:
+    - EV (Exit Velocity): Average launch_speed on batted balls
+    - LA (Launch Angle): Average launch_angle on batted balls
+    - Barrel%: Barrels / Batted Ball Events
+    - Hard%: Hard hit balls (95+ mph) / Batted Ball Events
+    - GB%, FB%, LD%: Ground ball, fly ball, line drive rates
+    - xBA, xSLG, xwOBA: Expected stats based on batted ball quality
+    """
+    batted_balls = []
+    total_pitches = 0
+    swings = 0
+    whiffs = 0
+
+    for rec in records:
+        total_pitches += 1
+
+        desc = rec.get('description', '').lower()
+        if 'swing' in desc or 'foul' in desc or 'hit_into_play' in desc.lower():
+            swings += 1
+            if 'swinging_strike' in desc or 'missed' in desc:
+                whiffs += 1
+
+        ev = safe_float(rec.get('launch_speed'))
+        la = safe_float(rec.get('launch_angle'))
+
+        if ev is not None and la is not None:
+            batted_balls.append({
+                'ev': ev,
+                'la': la,
+                'barrel': rec.get('barrel', '0') == '1',
+                'bb_type': rec.get('bb_type', ''),
+                'xba': safe_float(rec.get('estimated_ba_using_speedangle')),
+                'xslg': safe_float(rec.get('estimated_slg_using_speedangle')),
+                'xwoba': safe_float(rec.get('estimated_woba_using_speedangle')),
+            })
+
+    if not batted_balls:
+        return {}
+
+    total_bbe = len(batted_balls)
+
+    result = {
+        'BBE': total_bbe,
+        'Pitches': total_pitches,
+    }
+
+    evs = [bb['ev'] for bb in batted_balls if bb['ev'] is not None]
+    if evs:
+        result['EV'] = round(sum(evs) / len(evs), 1)
+        result['maxEV'] = round(max(evs), 1)
+
+    las = [bb['la'] for bb in batted_balls if bb['la'] is not None]
+    if las:
+        result['LA'] = round(sum(las) / len(las), 1)
+
+    barrels = sum(1 for bb in batted_balls if bb['barrel'])
+    result['Barrel%'] = round(barrels / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['Barrels'] = barrels
+
+    hard_hits = sum(1 for bb in batted_balls if bb['ev'] and bb['ev'] >= 95)
+    result['Hard%'] = round(hard_hits / total_bbe * 100, 1) if total_bbe > 0 else 0
+
+    gb_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'ground_ball')
+    fb_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'fly_ball')
+    ld_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'line_drive')
+    popup_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'popup')
+
+    result['GB%'] = round(gb_count / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['FB%'] = round(fb_count / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['LD%'] = round(ld_count / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['PU%'] = round(popup_count / total_bbe * 100, 1) if total_bbe > 0 else 0
+
+    xbas = [bb['xba'] for bb in batted_balls if bb['xba'] is not None]
+    xslgs = [bb['xslg'] for bb in batted_balls if bb['xslg'] is not None]
+    xwobas = [bb['xwoba'] for bb in batted_balls if bb['xwoba'] is not None]
+
+    if xbas:
+        result['xBA'] = round(sum(xbas) / len(xbas), 3)
+    if xslgs:
+        result['xSLG'] = round(sum(xslgs) / len(xslgs), 3)
+    if xwobas:
+        result['xwOBA'] = round(sum(xwobas) / len(xwobas), 3)
+
+    if swings > 0:
+        result['Whiff%'] = round(whiffs / swings * 100, 1)
+
+    return result
+
+
+def aggregate_pitcher_statcast(records: list[dict]) -> dict:
+    """
+    Aggregate pitch-level records into pitcher Statcast metrics.
+
+    Metrics calculated:
+    - Velo: Average fastball velocity
+    - SpinRate: Average spin rate
+    - Whiff%: Swinging strikes / swings
+    - CSW%: Called strikes + whiffs / total pitches
+    """
+    pitch_data = defaultdict(list)
+    total_pitches = 0
+    called_strikes = 0
+    swinging_strikes = 0
+    swings = 0
+
+    for rec in records:
+        total_pitches += 1
+
+        pitch_type = rec.get('pitch_type', 'UN')
+        velo = safe_float(rec.get('release_speed'))
+        spin = safe_float(rec.get('release_spin_rate'))
+
+        if velo is not None:
+            pitch_data[pitch_type].append({
+                'velo': velo,
+                'spin': spin,
+            })
+
+        desc = rec.get('description', '').lower()
+        if 'called_strike' in desc:
+            called_strikes += 1
+        if 'swinging_strike' in desc or 'missed' in desc:
+            swinging_strikes += 1
+        if 'swing' in desc or 'foul' in desc or 'hit_into_play' in desc.lower():
+            swings += 1
+
+    if total_pitches == 0:
+        return {}
+
+    result = {
+        'Pitches': total_pitches,
+    }
+
+    fastball_types = ['FF', 'SI', 'FC', 'FT']
+    fastball_velos = []
+    for pt in fastball_types:
+        if pt in pitch_data:
+            fastball_velos.extend([p['velo'] for p in pitch_data[pt] if p['velo'] is not None])
+
+    if fastball_velos:
+        result['Velo'] = round(sum(fastball_velos) / len(fastball_velos), 1)
+        result['maxVelo'] = round(max(fastball_velos), 1)
+
+    all_spins = []
+    for pt, pitches in pitch_data.items():
+        for p in pitches:
+            if p['spin'] is not None:
+                all_spins.append(p['spin'])
+
+    if all_spins:
+        result['SpinRate'] = round(sum(all_spins) / len(all_spins))
+
+    if swings > 0:
+        result['Whiff%'] = round(swinging_strikes / swings * 100, 1)
+
+    csw = called_strikes + swinging_strikes
+    result['CSW%'] = round(csw / total_pitches * 100, 1) if total_pitches > 0 else 0
+
+    # Pitch mix (compact format to reduce file size)
+    pitch_mix = {}
+    for pt, pitches in pitch_data.items():
+        if len(pitches) >= 5:
+            velos = [p['velo'] for p in pitches if p['velo'] is not None]
+            spins = [p['spin'] for p in pitches if p['spin'] is not None]
+
+            pitch_info = {
+                'n': len(pitches),
+                'pct': round(len(pitches) / total_pitches * 100, 1),
+            }
+
+            if velos:
+                pitch_info['v'] = round(sum(velos) / len(velos), 1)
+            if spins:
+                pitch_info['s'] = round(sum(spins) / len(spins))
+
+            pitch_mix[pt] = pitch_info
+
+    if pitch_mix:
+        result['mix'] = pitch_mix
+
+    return result
+
+
+def process_statcast_data(
+    batter_records: list[dict],
+    pitcher_records: list[dict],
+    level: str,
+) -> dict:
+    """
+    Process raw Statcast records into player-level aggregations.
+
+    Returns dict mapping player_id -> statcast metrics
+    """
+    players = {}
+
+    # Group batter records by player
+    batter_by_player = defaultdict(list)
+    for rec in batter_records:
+        player_id = rec.get('batter')
+        if player_id:
+            batter_by_player[player_id].append(rec)
+
+    for player_id, records in batter_by_player.items():
+        if len(records) >= 10:
+            player_name = records[0].get('player_name', '')
+            stats = aggregate_batter_statcast(records)
             if stats:
-                player_data = {
-                    'playerId': player_id,
-                    'lastUpdated': datetime.now().isoformat(),
+                players[player_id] = {
+                    'id': player_id,
+                    'name': player_name,
+                    'type': 'batter',
+                    'level': level,
+                    'bat': stats,
                 }
 
-                # Extract advanced hitting stats if available
-                if 'hitting' in stats:
-                    hitting = stats['hitting']
-                    if 'seasonadvanced' in hitting and hitting['seasonadvanced']:
-                        adv = hitting['seasonadvanced']
-                        if hasattr(adv, 'splits') and adv.splits:
-                            split = adv.splits[0]
-                            if hasattr(split, 'stat'):
-                                player_data['advancedHitting'] = extract_advanced_stats(split.stat)
+    # Group pitcher records by player
+    pitcher_by_player = defaultdict(list)
+    for rec in pitcher_records:
+        player_id = rec.get('pitcher')
+        if player_id:
+            pitcher_by_player[player_id].append(rec)
 
-                # Extract advanced pitching stats if available
-                if 'pitching' in stats:
-                    pitching = stats['pitching']
-                    if 'seasonadvanced' in pitching and pitching['seasonadvanced']:
-                        adv = pitching['seasonadvanced']
-                        if hasattr(adv, 'splits') and adv.splits:
-                            split = adv.splits[0]
-                            if hasattr(split, 'stat'):
-                                player_data['advancedPitching'] = extract_advanced_stats(split.stat)
+    for player_id, records in pitcher_by_player.items():
+        if len(records) >= 50:
+            player_name = records[0].get('player_name', '')
+            stats = aggregate_pitcher_statcast(records)
+            if stats:
+                if player_id in players:
+                    players[player_id]['pit'] = stats
+                    if stats.get('Pitches', 0) > players[player_id].get('bat', {}).get('BBE', 0) * 3:
+                        players[player_id]['type'] = 'pitcher'
+                else:
+                    players[player_id] = {
+                        'id': player_id,
+                        'name': player_name,
+                        'type': 'pitcher',
+                        'level': level,
+                        'pit': stats,
+                    }
 
-                if 'advancedHitting' in player_data or 'advancedPitching' in player_data:
-                    data['players'][player_id] = player_data
-
-        except Exception as e:
-            logger.warning(f"Error fetching data for player {player_id}: {e}")
-
-    return data
+    return players
 
 
-def extract_advanced_stats(stat) -> dict:
-    """Extract advanced stats from a stat object."""
-    stats = {}
+def fetch_month_statcast(
+    session: requests.Session,
+    year: int,
+    month: int,
+) -> dict:
+    """Fetch Statcast data for a specific month."""
+    # Calculate month date range
+    start_date = datetime(year, month, 1)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end_date = datetime(year, month + 1, 1) - timedelta(days=1)
 
-    # Common advanced metrics that might be available
-    advanced_attrs = [
-        'babip', 'iso', 'woba', 'wrc', 'wrcplus', 'war',
-        'leftOnBase', 'sacFlies', 'sacBunts',
-        'groundOuts', 'airOuts', 'groundOutsToAirouts',
-        'catchersInterference', 'plateAppearances',
-        'totalBases', 'extraBaseHits', 'intentionalWalks',
-        'pitchesPerPlateAppearance', 'atBatsPerHomeRun',
-        # Pitching advanced
-        'winPercentage', 'pitchesPerInning', 'runsScoredPer9',
-        'homeRunsPer9', 'inheritedRunners', 'inheritedRunnersScored',
-        'battersFaced', 'obp', 'slg', 'ops',
-    ]
+    # Don't fetch future dates
+    today = datetime.now()
+    if start_date > today:
+        return {}
+    if end_date > today:
+        end_date = today
 
-    for attr in advanced_attrs:
-        val = getattr(stat, attr, None)
-        if val is not None:
-            stats[attr] = val
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
 
-    return stats
+    all_players = {}
+
+    # Fetch for each supported level
+    for level in ['aaa', 'a']:  # AAA and Single-A (FSL)
+        level_name = 'Triple-A' if level == 'aaa' else 'Single-A (FSL)'
+        logger.info(f"  Fetching {level_name} data...")
+
+        # Fetch batter data
+        batter_csv = fetch_statcast_csv(session, year, start_str, end_str, 'batter', level)
+        batter_records = parse_statcast_csv(batter_csv) if batter_csv else []
+        logger.info(f"    Batter records: {len(batter_records)}")
+
+        time.sleep(2)
+
+        # Fetch pitcher data
+        pitcher_csv = fetch_statcast_csv(session, year, start_str, end_str, 'pitcher', level)
+        pitcher_records = parse_statcast_csv(pitcher_csv) if pitcher_csv else []
+        logger.info(f"    Pitcher records: {len(pitcher_records)}")
+
+        # Process into player aggregations
+        level_players = process_statcast_data(batter_records, pitcher_records, level.upper())
+        logger.info(f"    Players: {len(level_players)}")
+
+        # Merge into all_players
+        for player_id, player_data in level_players.items():
+            if player_id in all_players:
+                existing = all_players[player_id]
+                if 'bat' in player_data and 'bat' not in existing:
+                    existing['bat'] = player_data['bat']
+                if 'pit' in player_data and 'pit' not in existing:
+                    existing['pit'] = player_data['pit']
+            else:
+                all_players[player_id] = player_data
+
+        time.sleep(3)
+
+    return all_players
+
+
+def save_month_data(year: int, month: int, players: dict) -> None:
+    """Save monthly Statcast data to file."""
+    year_dir = STATCAST_DIR / str(year)
+    year_dir.mkdir(parents=True, exist_ok=True)
+
+    month_file = year_dir / f'{month:02d}.json'
+
+    output = {
+        'year': year,
+        'month': month,
+        'updated': datetime.now().isoformat(),
+        'players': players,
+    }
+
+    with open(month_file, 'w') as f:
+        json.dump(output, f, separators=(',', ':'))
+
+    logger.info(f"Saved {len(players)} players to {month_file}")
+
+
+def update_manifest(year: int, months: list[int]) -> None:
+    """Update the year's manifest file."""
+    year_dir = STATCAST_DIR / str(year)
+    year_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_file = year_dir / 'manifest.json'
+
+    manifest = {
+        'year': year,
+        'updated': datetime.now().isoformat(),
+        'months': sorted(months),
+        'coverage': {
+            'AAA': 'All Triple-A games',
+            'A': 'Florida State League (Single-A)',
+        },
+    }
+
+    with open(manifest_file, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    logger.info(f"Updated manifest: {manifest_file}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Fetch MiLB Statcast/advanced data')
+    parser = argparse.ArgumentParser(description='Fetch MiLB Statcast data from Baseball Savant')
     parser.add_argument('--year', type=int, default=datetime.now().year)
-    parser.add_argument('--players', type=str, default='',
-                        help='Comma-separated player IDs')
+    parser.add_argument('--month', type=int, default=None,
+                        help='Specific month to fetch (default: current or all)')
+    parser.add_argument('--all-months', action='store_true',
+                        help='Fetch all season months (April-September)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     args = parser.parse_args()
 
-    player_ids = [p.strip() for p in args.players.split(',')] if args.players else None
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
-    # Initialize MLB API client
-    mlb = Mlb()
+    logger.info(f"Fetching {args.year} MiLB Statcast data...")
+    logger.info("Note: Statcast data is only available for AAA and Florida State League games")
 
-    # Fetch data
-    data = fetch_statcast_data(mlb, args.year, player_ids)
+    session = get_session()
+    months_fetched = []
 
-    # Save
-    STATCAST_DIR.mkdir(parents=True, exist_ok=True)
+    if args.month:
+        # Fetch specific month
+        months_to_fetch = [args.month]
+    elif args.all_months:
+        # Fetch all season months
+        months_to_fetch = SEASON_MONTHS
+    else:
+        # Fetch current month only
+        current_month = datetime.now().month
+        if current_month in SEASON_MONTHS:
+            months_to_fetch = [current_month]
+        else:
+            logger.info(f"Month {current_month} is outside season (April-September)")
+            months_to_fetch = []
 
-    with open(STATCAST_DIR / f'{args.year}.json', 'w') as f:
-        json.dump(data, f, indent=2)
+    for month in months_to_fetch:
+        month_name = datetime(args.year, month, 1).strftime('%B')
+        logger.info(f"\nFetching {month_name} {args.year}...")
 
-    player_count = len(data.get('players', {}))
-    logger.info(f"Saved advanced stats for {player_count} players")
+        try:
+            players = fetch_month_statcast(session, args.year, month)
 
-    if player_count == 0:
-        logger.info("Note: Limited Statcast data available for MiLB through the API.")
-        logger.info("For full metrics, consider scraping Baseball Savant's MiLB search.")
+            if players:
+                save_month_data(args.year, month, players)
+                months_fetched.append(month)
+            else:
+                logger.info(f"No data available for {month_name}")
+
+        except Exception as e:
+            logger.error(f"Error fetching {month_name}: {e}")
+            if args.debug:
+                raise
+
+        time.sleep(5)  # Rate limiting between months
+
+    # Update manifest with all available months
+    if months_fetched:
+        # Check for existing months
+        year_dir = STATCAST_DIR / str(args.year)
+        if year_dir.exists():
+            existing_months = [
+                int(f.stem) for f in year_dir.glob('*.json')
+                if f.stem.isdigit()
+            ]
+            all_months = sorted(set(existing_months + months_fetched))
+        else:
+            all_months = months_fetched
+
+        update_manifest(args.year, all_months)
+
+    total_players = sum(
+        len(json.load(open(STATCAST_DIR / str(args.year) / f'{m:02d}.json')).get('players', {}))
+        for m in months_fetched
+        if (STATCAST_DIR / str(args.year) / f'{m:02d}.json').exists()
+    ) if months_fetched else 0
+
+    logger.info(f"\nComplete! Fetched {len(months_fetched)} months, ~{total_players} player-months of data")
 
 
 if __name__ == '__main__':
