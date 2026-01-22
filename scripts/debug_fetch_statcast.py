@@ -6,10 +6,14 @@ This is for testing the Statcast data fetching from Baseball Savant.
 It fetches Statcast data for predefined players and prints detailed output.
 
 Note: MiLB Statcast data is only available for AAA and Florida State League games.
+Baseball Savant data is pitch-level, so we filter by:
+  - 'pitcher' column for pitcher players
+  - 'batter' column for batter players
 
 Usage:
     python scripts/debug_fetch_statcast.py
     python scripts/debug_fetch_statcast.py --year 2025
+    python scripts/debug_fetch_statcast.py --diagnose  # Run data structure diagnosis
     python scripts/debug_fetch_statcast.py --save  # Save to monthly statcast files
 """
 
@@ -49,34 +53,71 @@ def fetch_player_statcast(session, player_id: str, player_type: str, year: int) 
     Uses the chunked fetching approach (sabRmetrics strategy) to avoid
     timeouts and Baseball Savant's 25,000 row limit.
 
-    Since Baseball Savant doesn't have a direct player endpoint, we fetch
-    all data for the season in chunks and filter by player ID.
+    Since Baseball Savant data is pitch-level, we need to:
+    - For pitchers: filter rows where the 'pitcher' column matches player_id
+    - For batters: filter rows where the 'batter' column matches player_id
+
+    Note: We fetch ALL data for both player_types (batter/pitcher perspectives)
+    because a pitcher appears in batter-perspective data and vice versa.
     """
     # Full season date range (as datetime objects for chunked fetching)
     start_date = datetime(year, 4, 1)  # April 1st
     end_date = min(datetime.now(), datetime(year, 9, 30))  # Sept 30th or today
 
     all_records = []
+    player_id_str = str(player_id).strip()
 
     # Fetch from both AAA and Single-A (FSL)
     for level in ['aaa', 'a']:
-        player_role = 'pitcher' if player_type == 'pitcher' else 'batter'
+        # Fetch BOTH batter and pitcher perspectives to ensure we get all data
+        # The player_type parameter to Savant just changes the grouping, not filtering
+        for fetch_type in ['batter', 'pitcher']:
+            logger.info(f"  Fetching {level.upper()} data (perspective: {fetch_type})...")
 
-        logger.info(f"  Fetching {level.upper()} {player_role} data (using 5-day chunks)...")
+            # Use the chunked fetching approach from fetch_statcast.py
+            records = fetch_chunked_statcast(session, year, start_date, end_date, fetch_type, level)
 
-        # Use the chunked fetching approach from fetch_statcast.py
-        records = fetch_chunked_statcast(session, year, start_date, end_date, player_role, level)
+            logger.info(f"    Got {len(records)} total pitch records")
 
-        logger.info(f"    Got {len(records)} total records")
+            # Debug: show sample of pitcher/batter IDs in the data
+            if records:
+                # Get unique pitcher and batter IDs from first 1000 records
+                sample_records = records[:1000]
+                pitcher_ids = set(str(r.get('pitcher', '')).strip() for r in sample_records if r.get('pitcher'))
+                batter_ids = set(str(r.get('batter', '')).strip() for r in sample_records if r.get('batter'))
 
-        # Filter for our player
-        if player_type == 'pitcher':
-            player_records = [r for r in records if r.get('pitcher') == player_id]
-        else:
-            player_records = [r for r in records if r.get('batter') == player_id]
+                logger.debug(f"    Sample pitcher IDs (first 10): {list(pitcher_ids)[:10]}")
+                logger.debug(f"    Sample batter IDs (first 10): {list(batter_ids)[:10]}")
 
-        logger.info(f"    Found {len(player_records)} records for player {player_id}")
-        all_records.extend(player_records)
+                # Check if target player is in the data
+                if player_id_str in pitcher_ids:
+                    logger.info(f"    ✓ Player {player_id_str} found in pitcher column!")
+                if player_id_str in batter_ids:
+                    logger.info(f"    ✓ Player {player_id_str} found in batter column!")
+
+            # Filter for our player based on their role
+            # Pitchers: look in 'pitcher' column, Batters: look in 'batter' column
+            if player_type == 'pitcher':
+                player_records = [r for r in records if str(r.get('pitcher', '')).strip() == player_id_str]
+            else:
+                player_records = [r for r in records if str(r.get('batter', '')).strip() == player_id_str]
+
+            logger.info(f"    Found {len(player_records)} records for {player_type} {player_id_str}")
+            all_records.extend(player_records)
+
+    # Deduplicate records (same pitch might appear in both perspectives)
+    if all_records:
+        seen = set()
+        unique_records = []
+        for r in all_records:
+            # Create a unique key for each pitch
+            key = (r.get('game_date'), r.get('pitcher'), r.get('batter'),
+                   r.get('inning'), r.get('at_bat_number'), r.get('pitch_number'))
+            if key not in seen:
+                seen.add(key)
+                unique_records.append(r)
+        logger.info(f"  Total unique records after deduplication: {len(unique_records)}")
+        return unique_records
 
     return all_records
 
@@ -90,7 +131,12 @@ def print_sample_records(records: list, count: int = 3):
     print(f"  Sample records (showing {min(count, len(records))} of {len(records)}):")
     for i, rec in enumerate(records[:count]):
         print(f"\n  Record {i + 1}:")
-        # Print key fields
+        # Print ID fields first (important for debugging filtering)
+        id_fields = ['pitcher', 'batter', 'pitcher_name', 'batter_name']
+        for field in id_fields:
+            if field in rec:
+                print(f"    {field}: {rec[field]}")
+        # Print other key fields
         key_fields = [
             'game_date', 'pitch_type', 'release_speed', 'release_spin_rate',
             'launch_speed', 'launch_angle', 'description', 'events',
@@ -99,6 +145,61 @@ def print_sample_records(records: list, count: int = 3):
         for field in key_fields:
             if field in rec and rec[field]:
                 print(f"    {field}: {rec[field]}")
+
+
+def diagnose_data_structure(session, year: int, level: str = 'aaa'):
+    """
+    Fetch a small sample of data and print diagnostic info about its structure.
+    This helps debug filtering issues by showing actual column names and sample values.
+    """
+    from datetime import timedelta
+
+    print(f"\n{'='*60}")
+    print("DATA STRUCTURE DIAGNOSIS")
+    print('='*60)
+
+    # Fetch just a few days of data
+    start_date = datetime(year, 5, 1)  # May 1st
+    end_date = datetime(year, 5, 5)    # May 5th
+
+    for fetch_type in ['batter', 'pitcher']:
+        print(f"\nFetching sample {level.upper()} data (perspective: {fetch_type})...")
+        records = fetch_chunked_statcast(session, year, start_date, end_date, fetch_type, level)
+
+        if not records:
+            print(f"  No data returned for {fetch_type} perspective")
+            continue
+
+        print(f"  Got {len(records)} records")
+
+        # Show all column names
+        if records:
+            print(f"\n  All columns in data: {list(records[0].keys())}")
+
+        # Show unique pitcher/batter IDs
+        pitcher_ids = set()
+        batter_ids = set()
+        for r in records[:500]:  # Sample first 500
+            pid = r.get('pitcher', '')
+            bid = r.get('batter', '')
+            if pid:
+                pitcher_ids.add(str(pid).strip())
+            if bid:
+                batter_ids.add(str(bid).strip())
+
+        print(f"\n  Unique pitcher IDs (sample of {len(pitcher_ids)}): {list(pitcher_ids)[:15]}")
+        print(f"  Unique batter IDs (sample of {len(batter_ids)}): {list(batter_ids)[:15]}")
+
+        # Check for our debug players
+        print(f"\n  Looking for debug players:")
+        for player in DEBUG_PLAYERS:
+            pid = player['id']
+            if pid in pitcher_ids:
+                print(f"    ✓ {player['name']} ({pid}) found as pitcher!")
+            elif pid in batter_ids:
+                print(f"    ✓ {player['name']} ({pid}) found as batter!")
+            else:
+                print(f"    ✗ {player['name']} ({pid}) NOT found in this sample")
 
 
 def main():
@@ -114,10 +215,20 @@ def main():
     parser.add_argument('--player-type', type=str, default='batter',
                         choices=['batter', 'pitcher'],
                         help='Type of the custom player')
+    parser.add_argument('--diagnose', action='store_true',
+                        help='Run data structure diagnosis before fetching')
     args = parser.parse_args()
 
     session = get_session()
     all_stats = {}
+
+    # Run diagnosis if requested
+    if args.diagnose:
+        diagnose_data_structure(session, args.year, 'aaa')
+        diagnose_data_structure(session, args.year, 'a')
+        print("\n" + "="*60)
+        print("Diagnosis complete. Proceeding with player fetch...")
+        print("="*60)
 
     # Build player list
     players = list(DEBUG_PLAYERS)
