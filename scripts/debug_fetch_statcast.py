@@ -10,8 +10,7 @@ Note: MiLB Statcast data is only available for AAA and Florida State League game
 Usage:
     python scripts/debug_fetch_statcast.py
     python scripts/debug_fetch_statcast.py --year 2025
-    python scripts/debug_fetch_statcast.py --month 6  # June only
-    python scripts/debug_fetch_statcast.py --save  # Save to statcast file
+    python scripts/debug_fetch_statcast.py --save  # Save to monthly statcast files
 """
 
 import argparse
@@ -44,25 +43,16 @@ DEBUG_PLAYERS = [
 ]
 
 
-def fetch_player_statcast(session, player_id: str, player_type: str, year: int, month: int = None) -> dict:
+def fetch_player_statcast(session, player_id: str, player_type: str, year: int) -> dict:
     """
-    Fetch Statcast data for a specific player.
+    Fetch Statcast data for a specific player for the entire season.
 
     Since Baseball Savant doesn't have a direct player endpoint, we fetch
-    all data for the time period and filter by player ID.
+    all data for the season and filter by player ID.
     """
-    if month:
-        # Specific month
-        start_date = f'{year}-{month:02d}-01'
-        if month == 12:
-            end_date = f'{year}-12-31'
-        else:
-            from datetime import datetime, timedelta
-            end_date = (datetime(year, month + 1, 1) - timedelta(days=1)).strftime('%Y-%m-%d')
-    else:
-        # Full season
-        start_date = f'{year}-04-01'
-        end_date = min(datetime.now(), datetime(year, 9, 30)).strftime('%Y-%m-%d')
+    # Full season
+    start_date = f'{year}-04-01'
+    end_date = min(datetime.now(), datetime(year, 9, 30)).strftime('%Y-%m-%d')
 
     all_records = []
 
@@ -113,10 +103,8 @@ def main():
     parser = argparse.ArgumentParser(description='Debug fetch MiLB Statcast data for specific players')
     parser.add_argument('--year', type=int, default=datetime.now().year,
                         help='Season year (default: current year)')
-    parser.add_argument('--month', type=int, default=None,
-                        help='Specific month to fetch (default: full season)')
     parser.add_argument('--save', action='store_true',
-                        help='Save fetched stats to the statcast file')
+                        help='Save fetched stats to monthly statcast files')
     parser.add_argument('--player-id', type=str,
                         help='Fetch a specific player by ID (in addition to debug list)')
     parser.add_argument('--player-name', type=str, default='Custom Player',
@@ -140,8 +128,6 @@ def main():
 
     print(f"\nStatcast Debug Fetch - {len(players)} players")
     print(f"Year: {args.year}")
-    if args.month:
-        print(f"Month: {args.month}")
     print(f"Players: {', '.join(p['name'] for p in players)}")
     print("\nNote: Statcast data is only available for AAA and Florida State League games")
 
@@ -155,8 +141,7 @@ def main():
             session,
             player['id'],
             player['type'],
-            args.year,
-            args.month
+            args.year
         )
 
         print(f"\n--- Raw Records ---")
@@ -206,38 +191,94 @@ def main():
         else:
             print(f"  {player['name']}: No Statcast data found")
 
-    # Save if requested
+    # Save if requested (split by month)
     if args.save and all_stats:
         year_dir = STATCAST_DIR / str(args.year)
         year_dir.mkdir(parents=True, exist_ok=True)
 
-        if args.month:
-            output_file = year_dir / f'{args.month:02d}.json'
-        else:
-            output_file = year_dir / 'debug.json'
+        print(f"\nSaving Statcast stats to monthly files for {args.year}...")
 
-        # Load existing and merge
-        existing_players = {}
-        if output_file.exists():
-            with open(output_file) as f:
-                data = json.load(f)
-                existing_players = data.get('players', {})
-            print(f"\nLoaded {len(existing_players)} existing players from {output_file}")
+        # We need to access the raw records to split by month
+        # Let's re-fetch and organize by month
+        months_with_data = {}
 
-        # Merge new stats
-        existing_players.update(all_stats)
+        for player in players:
+            print(f"\nProcessing {player['name']} for monthly files...")
 
-        output = {
-            'year': args.year,
-            'month': args.month,
-            'updated': datetime.now().isoformat(),
-            'players': existing_players,
-        }
+            # Re-fetch records
+            records = fetch_player_statcast(
+                session,
+                player['id'],
+                player['type'],
+                args.year
+            )
 
-        with open(output_file, 'w') as f:
-            json.dump(output, f, indent=2)
+            # Split records by month
+            for record in records:
+                game_date = record.get('game_date', '')
+                if game_date and len(game_date) >= 7:  # Format: YYYY-MM-DD
+                    month = int(game_date[5:7])  # Extract month
 
-        print(f"Saved {len(existing_players)} total players to {output_file}")
+                    if month not in months_with_data:
+                        months_with_data[month] = {}
+
+                    if player['id'] not in months_with_data[month]:
+                        months_with_data[month][player['id']] = []
+
+                    months_with_data[month][player['id']].append(record)
+
+        # Save each month's data
+        months_saved = []
+        for month in SEASON_MONTHS:
+            if month not in months_with_data:
+                continue
+
+            month_file = year_dir / f'{month:02d}.json'
+
+            # Load existing stats
+            existing_players = {}
+            if month_file.exists():
+                with open(month_file) as f:
+                    data = json.load(f)
+                    existing_players = data.get('players', {})
+
+            # Process and aggregate stats for this month
+            month_player_count = 0
+            for player_id, records in months_with_data[month].items():
+                # Find player info
+                player_info = next(p for p in players if p['id'] == player_id)
+
+                # Aggregate stats
+                if player_info['type'] == 'pitcher':
+                    stats = aggregate_pitcher_statcast(records)
+                else:
+                    stats = aggregate_batter_statcast(records)
+
+                if stats:
+                    existing_players[player_id] = {
+                        'id': player_id,
+                        'name': player_info['name'],
+                        'type': player_info['type'],
+                        'bat' if player_info['type'] == 'batter' else 'pit': stats,
+                    }
+                    month_player_count += 1
+
+            # Save this month's file
+            if month_player_count > 0:
+                output = {
+                    'year': args.year,
+                    'month': month,
+                    'updated': datetime.now().isoformat(),
+                    'players': existing_players,
+                }
+
+                with open(month_file, 'w') as f:
+                    json.dump(output, f, indent=2)
+
+                print(f"  Month {month:02d}: Saved {month_player_count} players ({len(existing_players)} total)")
+                months_saved.append(month)
+
+        print(f"\nSaved Statcast stats to {len(months_saved)} monthly files")
 
     print("\nDone!")
 

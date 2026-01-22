@@ -7,10 +7,6 @@ on:
         description: 'Season year (default: current year)'
         required: false
         type: string
-      month:
-        description: 'Specific month (1-12, default: current month)'
-        required: false
-        type: string
       player_id:
         description: 'Optional: Fetch a specific player by ID'
         required: false
@@ -62,7 +58,6 @@ jobs:
         run: |
           python scripts/debug_fetch_statcast.py \
             ${{ github.event.inputs.year && format('--year {0}', github.event.inputs.year) || '' }} \
-            ${{ github.event.inputs.month && format('--month {0}', github.event.inputs.month) || '' }} \
             ${{ github.event.inputs.player_id && format('--player-id {0}', github.event.inputs.player_id) || '' }} \
             ${{ github.event.inputs.player_name && format('--player-name "{0}"', github.event.inputs.player_name) || '' }} \
             ${{ github.event.inputs.player_type && format('--player-type {0}', github.event.inputs.player_type) || '' }} \
@@ -88,9 +83,6 @@ jobs:
             fi
             if [ -n "${{ github.event.inputs.year }}" ]; then
               COMMIT_MSG="$COMMIT_MSG (year ${{ github.event.inputs.year }})"
-            fi
-            if [ -n "${{ github.event.inputs.month }}" ]; then
-              COMMIT_MSG="$COMMIT_MSG month ${{ github.event.inputs.month }}"
             fi
             git commit -m "$COMMIT_MSG"
             git push
