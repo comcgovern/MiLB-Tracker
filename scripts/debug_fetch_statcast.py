@@ -22,8 +22,7 @@ from pathlib import Path
 from fetch_statcast import (
     STATCAST_DIR,
     get_session,
-    fetch_statcast_csv,
-    parse_statcast_csv,
+    fetch_chunked_statcast,
     aggregate_batter_statcast,
     aggregate_pitcher_statcast,
     SEASON_MONTHS,
@@ -47,12 +46,15 @@ def fetch_player_statcast(session, player_id: str, player_type: str, year: int) 
     """
     Fetch Statcast data for a specific player for the entire season.
 
+    Uses the chunked fetching approach (sabRmetrics strategy) to avoid
+    timeouts and Baseball Savant's 25,000 row limit.
+
     Since Baseball Savant doesn't have a direct player endpoint, we fetch
-    all data for the season and filter by player ID.
+    all data for the season in chunks and filter by player ID.
     """
-    # Full season
-    start_date = f'{year}-04-01'
-    end_date = min(datetime.now(), datetime(year, 9, 30)).strftime('%Y-%m-%d')
+    # Full season date range (as datetime objects for chunked fetching)
+    start_date = datetime(year, 4, 1)  # April 1st
+    end_date = min(datetime.now(), datetime(year, 9, 30))  # Sept 30th or today
 
     all_records = []
 
@@ -60,21 +62,21 @@ def fetch_player_statcast(session, player_id: str, player_type: str, year: int) 
     for level in ['aaa', 'a']:
         player_role = 'pitcher' if player_type == 'pitcher' else 'batter'
 
-        logger.info(f"  Fetching {level.upper()} {player_role} data...")
-        csv_data = fetch_statcast_csv(session, year, start_date, end_date, player_role, level)
+        logger.info(f"  Fetching {level.upper()} {player_role} data (using 5-day chunks)...")
 
-        if csv_data:
-            records = parse_statcast_csv(csv_data)
-            logger.info(f"    Got {len(records)} total records")
+        # Use the chunked fetching approach from fetch_statcast.py
+        records = fetch_chunked_statcast(session, year, start_date, end_date, player_role, level)
 
-            # Filter for our player
-            if player_type == 'pitcher':
-                player_records = [r for r in records if r.get('pitcher') == player_id]
-            else:
-                player_records = [r for r in records if r.get('batter') == player_id]
+        logger.info(f"    Got {len(records)} total records")
 
-            logger.info(f"    Found {len(player_records)} records for player {player_id}")
-            all_records.extend(player_records)
+        # Filter for our player
+        if player_type == 'pitcher':
+            player_records = [r for r in records if r.get('pitcher') == player_id]
+        else:
+            player_records = [r for r in records if r.get('batter') == player_id]
+
+        logger.info(f"    Found {len(player_records)} records for player {player_id}")
+        all_records.extend(player_records)
 
     return all_records
 
