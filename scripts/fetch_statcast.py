@@ -37,16 +37,48 @@ STATS_DIR = DATA_DIR / 'stats'
 # Baseball Savant endpoints (minors uses hyphens, MLB uses underscore)
 SAVANT_MINORS_URL = 'https://baseballsavant.mlb.com/statcast-search-minors/csv'
 
-# Request settings - use longer timeout like pybaseball
-REQUEST_TIMEOUT = 300  # 5 minutes, similar to pybaseball's approach
+# Request settings - following sabRmetrics chunking approach
+REQUEST_TIMEOUT = 120  # 2 minutes per chunk (chunks are smaller now)
 MAX_RETRIES = 3
 RETRY_DELAY = 5
+CHUNK_DAYS = 5  # Split date ranges into 5-day chunks (sabRmetrics strategy)
+ROW_LIMIT_WARNING = 25000  # Baseball Savant returns max 25,000 rows per query
 
 # Known CSV column names to detect valid responses
 VALID_CSV_COLUMNS = ['pitch_type', 'release_speed', 'batter', 'pitcher', 'game_date', 'launch_speed']
 
 # Season months (April = 4 through September = 9)
 SEASON_MONTHS = [4, 5, 6, 7, 8, 9]
+
+
+def generate_date_chunks(start_date: datetime, end_date: datetime, chunk_days: int = CHUNK_DAYS) -> list[tuple[str, str]]:
+    """
+    Split a date range into smaller chunks (sabRmetrics strategy).
+
+    This helps avoid:
+    1. Timeouts on large date ranges
+    2. Hitting Baseball Savant's 25,000 row limit per query
+
+    Args:
+        start_date: Start of the date range
+        end_date: End of the date range
+        chunk_days: Number of days per chunk (default: 5)
+
+    Returns:
+        List of (start_date_str, end_date_str) tuples
+    """
+    chunks = []
+    current = start_date
+
+    while current <= end_date:
+        chunk_end = min(current + timedelta(days=chunk_days - 1), end_date)
+        chunks.append((
+            current.strftime('%Y-%m-%d'),
+            chunk_end.strftime('%Y-%m-%d'),
+        ))
+        current = chunk_end + timedelta(days=1)
+
+    return chunks
 
 
 def get_session() -> requests.Session:
@@ -456,12 +488,77 @@ def process_statcast_data(
     return players
 
 
+def fetch_chunked_statcast(
+    session: requests.Session,
+    year: int,
+    start_date: datetime,
+    end_date: datetime,
+    player_type: str,
+    level: str,
+) -> list[dict]:
+    """
+    Fetch Statcast data using 5-day chunks (sabRmetrics strategy).
+
+    This approach:
+    1. Splits date range into 5-day chunks
+    2. Fetches each chunk with retries
+    3. Warns if any chunk hits the 25,000 row limit
+    4. Combines all data
+
+    Args:
+        session: Requests session
+        year: Season year
+        start_date: Start of the date range
+        end_date: End of the date range
+        player_type: 'batter' or 'pitcher'
+        level: 'aaa' for Triple-A or 'a' for Single-A
+
+    Returns:
+        Combined list of all records from all chunks
+    """
+    chunks = generate_date_chunks(start_date, end_date)
+    n_chunks = len(chunks)
+    level_name = 'AAA' if level == 'aaa' else 'A'
+
+    logger.info(f"    Downloading {n_chunks} chunk(s) ({CHUNK_DAYS}-day periods) for {level_name} {player_type}s...")
+
+    all_records = []
+    chunks_at_limit = 0
+
+    for i, (chunk_start, chunk_end) in enumerate(chunks, 1):
+        logger.debug(f"      Chunk {i}/{n_chunks}: {chunk_start} to {chunk_end}")
+
+        csv_data = fetch_statcast_csv(session, year, chunk_start, chunk_end, player_type, level)
+        records = parse_statcast_csv(csv_data) if csv_data else []
+
+        if records:
+            all_records.extend(records)
+            logger.debug(f"        ✓ {len(records)} rows")
+
+            # Check for row limit (data may be truncated)
+            if len(records) == ROW_LIMIT_WARNING:
+                chunks_at_limit += 1
+                logger.warning(f"        ⚠ Chunk {i} returned exactly {ROW_LIMIT_WARNING} rows - data may be truncated")
+        else:
+            logger.debug(f"        • No data (likely no games)")
+
+        # Rate limiting between chunks
+        if i < n_chunks:
+            time.sleep(1)
+
+    if chunks_at_limit > 0:
+        logger.warning(f"    ⚠ {chunks_at_limit} chunk(s) returned exactly {ROW_LIMIT_WARNING} rows. Data may be missing.")
+
+    logger.info(f"    ✓ Total {level_name} {player_type} rows: {len(all_records)}")
+    return all_records
+
+
 def fetch_month_statcast(
     session: requests.Session,
     year: int,
     month: int,
 ) -> dict:
-    """Fetch Statcast data for a specific month."""
+    """Fetch Statcast data for a specific month using 5-day chunking."""
     # Calculate month date range
     start_date = datetime(year, month, 1)
     if month == 12:
@@ -476,31 +573,24 @@ def fetch_month_statcast(
     if end_date > today:
         end_date = today
 
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
-
     all_players = {}
 
     # Fetch for each supported level
     for level in ['aaa', 'a']:  # AAA and Single-A (FSL)
         level_name = 'Triple-A' if level == 'aaa' else 'Single-A (FSL)'
-        logger.info(f"  Fetching {level_name} data...")
+        logger.info(f"  Fetching {level_name} data (using {CHUNK_DAYS}-day chunks)...")
 
-        # Fetch batter data
-        batter_csv = fetch_statcast_csv(session, year, start_str, end_str, 'batter', level)
-        batter_records = parse_statcast_csv(batter_csv) if batter_csv else []
-        logger.info(f"    Batter records: {len(batter_records)}")
+        # Fetch batter data with chunking
+        batter_records = fetch_chunked_statcast(session, year, start_date, end_date, 'batter', level)
 
         time.sleep(2)
 
-        # Fetch pitcher data
-        pitcher_csv = fetch_statcast_csv(session, year, start_str, end_str, 'pitcher', level)
-        pitcher_records = parse_statcast_csv(pitcher_csv) if pitcher_csv else []
-        logger.info(f"    Pitcher records: {len(pitcher_records)}")
+        # Fetch pitcher data with chunking
+        pitcher_records = fetch_chunked_statcast(session, year, start_date, end_date, 'pitcher', level)
 
         # Process into player aggregations
         level_players = process_statcast_data(batter_records, pitcher_records, level.upper())
-        logger.info(f"    Players: {len(level_players)}")
+        logger.info(f"    Players with sufficient data: {len(level_players)}")
 
         # Merge into all_players
         for player_id, player_data in level_players.items():
