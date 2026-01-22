@@ -115,6 +115,13 @@ export function StatsTable() {
     openGameLog(player);
   };
 
+  // Helper to determine if a player level has Statcast coverage
+  // AAA has full Statcast coverage since 2023
+  // Some Single-A (FSL) games also have coverage
+  const levelHasStatcast = (level: string | undefined): boolean => {
+    return level === 'AAA';
+  };
+
   // Helper to find player info from registry or index
   // Returns player info and type (from index if available)
   const findPlayerInfo = (playerId: string): { player: Player | undefined; indexType?: 'batter' | 'pitcher' } => {
@@ -125,12 +132,18 @@ export function StatsTable() {
     const indexPlayer = playerIndex?.players.find((p) => getPlayerId(p) === playerId);
 
     if (registryPlayer) {
-      return { player: registryPlayer, indexType: indexPlayer?.type };
+      // Update hasStatcast based on level if not already set
+      const playerWithStatcast = {
+        ...registryPlayer,
+        hasStatcast: registryPlayer.hasStatcast || levelHasStatcast(registryPlayer.level),
+      };
+      return { player: playerWithStatcast, indexType: indexPlayer?.type };
     }
 
     // Fall back to player index
     if (indexPlayer) {
       // Convert IndexedPlayer to Player format
+      // Enable Statcast for AAA players (all AAA games have Statcast since 2023)
       return {
         player: {
           mlbId: indexPlayer.mlbId,
@@ -139,7 +152,7 @@ export function StatsTable() {
           org: indexPlayer.org,
           level: indexPlayer.level as Player['level'],
           position: indexPlayer.position,
-          hasStatcast: false,
+          hasStatcast: levelHasStatcast(indexPlayer.level),
         },
         indexType: indexPlayer.type,
       };
