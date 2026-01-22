@@ -262,14 +262,16 @@ def add_player(
         logger.info(f"Determined org: {org}")
 
     # Build player record
+    # AAA players have Statcast coverage since 2023
+    player_level = level or 'A+'
     player = {
         'mlbId': mlb_id,
         'name': name,
         'team': team or 'Unknown',
         'org': org or 'UNK',
-        'level': level or 'A+',
+        'level': player_level,
         'position': position or 'UTIL',
-        'hasStatcast': False,
+        'hasStatcast': player_level == 'AAA',  # AAA has full Statcast since 2023
     }
 
     # Add to registry

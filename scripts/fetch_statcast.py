@@ -34,26 +34,31 @@ DATA_DIR = Path(__file__).parent.parent / 'data'
 STATCAST_DIR = DATA_DIR / 'statcast'
 STATS_DIR = DATA_DIR / 'stats'
 
-# Baseball Savant minor league search endpoint
+# Baseball Savant endpoints (minors uses hyphens, MLB uses underscore)
 SAVANT_MINORS_URL = 'https://baseballsavant.mlb.com/statcast-search-minors/csv'
 
-# Request settings
-REQUEST_TIMEOUT = 120
+# Request settings - use longer timeout like pybaseball
+REQUEST_TIMEOUT = 300  # 5 minutes, similar to pybaseball's approach
 MAX_RETRIES = 3
 RETRY_DELAY = 5
+
+# Known CSV column names to detect valid responses
+VALID_CSV_COLUMNS = ['pitch_type', 'release_speed', 'batter', 'pitcher', 'game_date', 'launch_speed']
 
 # Season months (April = 4 through September = 9)
 SEASON_MONTHS = [4, 5, 6, 7, 8, 9]
 
 
 def get_session() -> requests.Session:
-    """Create a session with appropriate headers."""
+    """Create a session with appropriate headers.
+
+    Following pybaseball's approach with minimal headers.
+    Baseball Savant's API is generally permissive.
+    """
     session = requests.Session()
+    # Use a standard browser User-Agent to avoid bot detection
     session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/csv,application/csv,*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://baseballsavant.mlb.com/statcast-search-minors',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     })
     return session
 
@@ -80,48 +85,48 @@ def fetch_statcast_csv(
     Returns:
         CSV data as string, or None if request failed
     """
+    # Parameters aligned with pybaseball's statcast query format
+    # Reference: https://github.com/jldbc/pybaseball/blob/master/docs/statcast.md
     params = {
         'all': 'true',
         'hfPT': '',
         'hfAB': '',
-        'hfGT': 'R|',
+        'hfBBT': '',
         'hfPR': '',
         'hfZ': '',
-        'hfStadium': '',
+        'stadium': '',
         'hfBBL': '',
         'hfNewZones': '',
-        'hfPull': '',
-        'hfC': '',
+        'hfGT': 'R|',  # R=Regular season (pybaseball uses R|PO|S| but we only need regular)
         'hfSea': f'{year}|',
         'hfSit': '',
         'player_type': player_type,
         'hfOuts': '',
-        'hfOpponent': '',
+        'opponent': '',
         'pitcher_throws': '',
         'batter_stands': '',
         'hfSA': '',
         'game_date_gt': start_date,
         'game_date_lt': end_date,
         'hfMo': '',
-        'hfTeam': '',
-        'home_road': '',
-        'hfRO': '',
+        'team': '',
         'position': '',
-        'hfInfield': '',
-        'hfOutfield': '',
-        'hfInn': '',
-        'hfBBT': '',
+        'hfRO': '',
+        'home_road': '',
         'hfFlag': '',
         'metric_1': '',
-        'group_by': 'name',
+        'hfInn': '',
         'min_pitches': '0',
         'min_results': '0',
-        'min_pas': '0',
+        'min_abs': '0',
+        'group_by': 'name',
         'sort_col': 'pitches',
+        'player_event_sort': 'h_launch_speed',
         'sort_order': 'desc',
         'type': 'details',
     }
 
+    # Add level filter for minors endpoint
     if level == 'aaa':
         params['hfLevel'] = 'AAA|'
     elif level == 'a':
@@ -130,17 +135,33 @@ def fetch_statcast_csv(
     for attempt in range(MAX_RETRIES):
         try:
             logger.debug(f"Fetching {player_type} data for {level.upper()} ({start_date} to {end_date})...")
+            logger.debug(f"URL: {SAVANT_MINORS_URL}")
             resp = session.get(SAVANT_MINORS_URL, params=params, timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
 
             content = resp.text
-            if content and len(content) > 100 and 'pitch_type' in content.lower():
+            content_lower = content.lower()
+
+            # Log response details for debugging
+            logger.debug(f"Response status: {resp.status_code}, Content length: {len(content)}")
+            if len(content) < 500:
+                logger.debug(f"Full response: {content}")
+            else:
+                logger.debug(f"First 500 chars: {content[:500]}")
+
+            # Check if response is valid CSV with expected columns
+            has_valid_columns = any(col in content_lower for col in VALID_CSV_COLUMNS)
+
+            if content and len(content) > 100 and has_valid_columns:
+                logger.info(f"Successfully fetched {len(content)} bytes of data")
                 return content
-            elif 'No results' in content or len(content) < 100:
-                logger.debug(f"No data returned for {level.upper()} {player_type}")
+            elif 'no results' in content_lower or 'error' in content_lower or len(content) < 100:
+                logger.debug(f"No data returned for {level.upper()} {player_type}: {content[:200] if content else 'empty'}")
                 return None
             else:
-                logger.warning(f"Unexpected response format for {level.upper()} {player_type}")
+                # Return content anyway - might still be valid CSV with different columns
+                logger.warning(f"Unexpected response format for {level.upper()} {player_type}, returning anyway")
+                logger.warning(f"Content preview: {content[:300]}")
                 return content
 
         except requests.exceptions.RequestException as e:
@@ -148,6 +169,7 @@ def fetch_statcast_csv(
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY * (attempt + 1))
 
+    logger.error(f"Failed to fetch data after {MAX_RETRIES} attempts")
     return None
 
 
