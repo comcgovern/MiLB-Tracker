@@ -1,1 +1,2 @@
 requests>=2.31.0
+python-mlb-statsapi>=0.5.26
