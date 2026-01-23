@@ -1,0 +1,74 @@
+name: Nightly Stats Update
+
+on:
+  schedule:
+    # Run at 3:30 AM UTC every day during the season (April-September)
+    - cron: '30 3 * 4-9 *'
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Enable debug logging'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  nightly-update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Fetch previous day's MiLB stats
+        run: |
+          # Fetch stats from yesterday's minor league games
+          python scripts/fetch_stats_by_date.py \
+            --yesterday \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            YESTERDAY=$(date -u -d "yesterday" +%Y-%m-%d)
+            git commit -m "Update stats ${YESTERDAY}"
+            git push
+          fi
+
+  # Trigger deploy after stats update
+  trigger-deploy:
+    needs: nightly-update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deployment
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: stats-updated
