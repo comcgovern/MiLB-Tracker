@@ -1,0 +1,147 @@
+name: Backfill Historical Stats
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Fetch mode'
+        required: true
+        type: choice
+        options:
+          - date
+          - month
+          - year
+        default: 'month'
+      date:
+        description: 'Date to fetch (YYYY-MM-DD) - for date mode'
+        required: false
+        type: string
+      month:
+        description: 'Month to fetch (YYYY-MM) - for month mode'
+        required: false
+        type: string
+      year:
+        description: 'Year to fetch (YYYY) - for year mode (fetches April-September)'
+        required: false
+        type: string
+      workers:
+        description: 'Number of parallel workers'
+        required: false
+        default: '10'
+        type: string
+      debug:
+        description: 'Enable debug logging'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours for full year backfill
+
+    steps:
+      - name: Validate inputs
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          DATE="${{ github.event.inputs.date }}"
+          MONTH="${{ github.event.inputs.month }}"
+          YEAR="${{ github.event.inputs.year }}"
+
+          if [ "$MODE" = "date" ] && [ -z "$DATE" ]; then
+            echo "Error: Date is required for date mode"
+            exit 1
+          fi
+
+          if [ "$MODE" = "month" ] && [ -z "$MONTH" ]; then
+            echo "Error: Month is required for month mode"
+            exit 1
+          fi
+
+          if [ "$MODE" = "year" ] && [ -z "$YEAR" ]; then
+            echo "Error: Year is required for year mode"
+            exit 1
+          fi
+
+          echo "Mode: $MODE"
+          echo "Date: $DATE"
+          echo "Month: $MONTH"
+          echo "Year: $YEAR"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Backfill stats (date mode)
+        if: ${{ github.event.inputs.mode == 'date' }}
+        run: |
+          python scripts/fetch_stats_by_date.py \
+            --date "${{ github.event.inputs.date }}" \
+            --workers ${{ github.event.inputs.workers }} \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Backfill stats (month mode)
+        if: ${{ github.event.inputs.mode == 'month' }}
+        run: |
+          python scripts/fetch_stats_by_date.py \
+            --month "${{ github.event.inputs.month }}" \
+            --workers ${{ github.event.inputs.workers }} \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Backfill stats (year mode)
+        if: ${{ github.event.inputs.mode == 'year' }}
+        run: |
+          python scripts/fetch_stats_by_date.py \
+            --year ${{ github.event.inputs.year }} \
+            --workers ${{ github.event.inputs.workers }} \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            MODE="${{ github.event.inputs.mode }}"
+            case "$MODE" in
+              date)
+                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.date }}"
+                ;;
+              month)
+                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.month }}"
+                ;;
+              year)
+                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.year }} season"
+                ;;
+            esac
+            git commit -m "$COMMIT_MSG"
+            git push
+          fi

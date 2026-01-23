@@ -1,1 +1,5 @@
-{"lastUpdated": "2026-01-23T06:50:41.273309", "playerCount": 7812}
+{
+  "lastUpdated": null,
+  "playerCount": 0,
+  "note": "Run backfill-stats workflow to populate data"
+}
