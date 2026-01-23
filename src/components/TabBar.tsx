@@ -9,13 +9,8 @@ export function TabBar() {
     db.teams.orderBy('displayOrder').toArray()
   );
 
-  const { activeTeamId, setActiveTeamId, openAddTeamModal } = useUIStore();
+  const { activeTeamId, showDashboard, goToDashboard, goToTeam, openAddTeamModal } = useUIStore();
   const { deleteTeam } = useTeams();
-
-  // Set first team as active if none selected
-  if (teams && teams.length > 0 && !activeTeamId) {
-    setActiveTeamId(teams[0].id!);
-  }
 
   const handleDeleteTeam = async (e: React.MouseEvent, teamId: string, teamName: string) => {
     e.stopPropagation(); // Prevent tab selection
@@ -23,9 +18,9 @@ export function TabBar() {
     if (confirm(`Delete team "${teamName}" and all its players? This cannot be undone.`)) {
       await deleteTeam(teamId);
 
-      // If we deleted the active team, clear selection
+      // If we deleted the active team, go back to dashboard
       if (activeTeamId === teamId) {
-        setActiveTeamId(null);
+        goToDashboard();
       }
     }
   };
@@ -33,14 +28,35 @@ export function TabBar() {
   return (
     <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6">
       <div className="flex items-center gap-2 overflow-x-auto">
+        {/* Dashboard Tab */}
+        <button
+          onClick={goToDashboard}
+          className={`
+            px-4 py-3 font-medium whitespace-nowrap border-b-2 transition-colors
+            ${
+              showDashboard
+                ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }
+          `}
+        >
+          📊 Dashboard
+        </button>
+
+        {/* Separator */}
+        {teams && teams.length > 0 && (
+          <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+        )}
+
+        {/* Team Tabs */}
         {teams?.map((team) => (
           <div key={team.id} className="relative group">
             <button
-              onClick={() => setActiveTeamId(team.id!)}
+              onClick={() => goToTeam(team.id!)}
               className={`
                 px-4 py-3 font-medium whitespace-nowrap border-b-2 transition-colors
                 ${
-                  activeTeamId === team.id
+                  !showDashboard && activeTeamId === team.id
                     ? 'border-primary-600 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }

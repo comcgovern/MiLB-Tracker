@@ -5,6 +5,7 @@ import type { Split, Player } from '../types';
 interface UIStore {
   activeTeamId: string | null;
   activeSplit: Split;
+  showDashboard: boolean;  // Whether to show dashboard view
   isAddPlayerModalOpen: boolean;
   isAddTeamModalOpen: boolean;
   isSettingsModalOpen: boolean;
@@ -15,6 +16,9 @@ interface UIStore {
 
   setActiveTeamId: (teamId: string | null) => void;
   setActiveSplit: (split: Split) => void;
+  setShowDashboard: (show: boolean) => void;
+  goToDashboard: () => void;
+  goToTeam: (teamId: string) => void;
   openAddPlayerModal: () => void;
   closeAddPlayerModal: () => void;
   openAddTeamModal: () => void;
@@ -34,6 +38,7 @@ interface UIStore {
 export const useUIStore = create<UIStore>((set) => ({
   activeTeamId: null,
   activeSplit: 'season',
+  showDashboard: true,  // Start on dashboard by default
   isAddPlayerModalOpen: false,
   isAddTeamModalOpen: false,
   isSettingsModalOpen: false,
@@ -47,6 +52,15 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setActiveSplit: (split) =>
     set({ activeSplit: split }),
+
+  setShowDashboard: (show) =>
+    set({ showDashboard: show }),
+
+  goToDashboard: () =>
+    set({ showDashboard: true, activeTeamId: null }),
+
+  goToTeam: (teamId) =>
+    set({ showDashboard: false, activeTeamId: teamId }),
 
   openAddPlayerModal: () =>
     set({ isAddPlayerModalOpen: true }),
