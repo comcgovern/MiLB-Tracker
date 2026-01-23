@@ -10,7 +10,6 @@ on:
         options:
           - date
           - month
-          - year
         default: 'month'
       date:
         description: 'Date to fetch (YYYY-MM-DD) - for date mode'
@@ -18,10 +17,6 @@ on:
         type: string
       month:
         description: 'Month to fetch (YYYY-MM) - for month mode'
-        required: false
-        type: string
-      year:
-        description: 'Year to fetch (YYYY) - for year mode (fetches April-September)'
         required: false
         type: string
       workers:
@@ -44,7 +39,7 @@ env:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours for full year backfill
+    timeout-minutes: 120  # 2 hours max for month backfill
 
     steps:
       - name: Validate inputs
@@ -52,7 +47,6 @@ jobs:
           MODE="${{ github.event.inputs.mode }}"
           DATE="${{ github.event.inputs.date }}"
           MONTH="${{ github.event.inputs.month }}"
-          YEAR="${{ github.event.inputs.year }}"
 
           if [ "$MODE" = "date" ] && [ -z "$DATE" ]; then
             echo "Error: Date is required for date mode"
@@ -64,15 +58,9 @@ jobs:
             exit 1
           fi
 
-          if [ "$MODE" = "year" ] && [ -z "$YEAR" ]; then
-            echo "Error: Year is required for year mode"
-            exit 1
-          fi
-
           echo "Mode: $MODE"
           echo "Date: $DATE"
           echo "Month: $MONTH"
-          echo "Year: $YEAR"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -109,16 +97,6 @@ jobs:
         env:
           PYTHONUNBUFFERED: '1'
 
-      - name: Backfill stats (year mode)
-        if: ${{ github.event.inputs.mode == 'year' }}
-        run: |
-          python scripts/fetch_stats_by_date.py \
-            --year ${{ github.event.inputs.year }} \
-            --workers ${{ github.event.inputs.workers }} \
-            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
-        env:
-          PYTHONUNBUFFERED: '1'
-
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
@@ -137,9 +115,6 @@ jobs:
                 ;;
               month)
                 COMMIT_MSG="Backfill stats for ${{ github.event.inputs.month }}"
-                ;;
-              year)
-                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.year }} season"
                 ;;
             esac
             git commit -m "$COMMIT_MSG"
