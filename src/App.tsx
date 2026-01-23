@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { Controls } from './components/Controls';
 import { StatsTable } from './components/StatsTable';
+import { Dashboard } from './components/Dashboard';
 import { AddTeamModal } from './components/AddTeamModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { DateRangeModal } from './components/DateRangeModal';
@@ -12,7 +13,7 @@ import { GameLogModal } from './components/GameLogModal';
 
 function App() {
   const { darkMode } = useSettingsStore();
-  const { isDateRangeModalOpen, closeDateRangeModal, setCustomDateRange, gameLogPlayer, closeGameLog } = useUIStore();
+  const { showDashboard, isDateRangeModalOpen, closeDateRangeModal, setCustomDateRange, gameLogPlayer, closeGameLog } = useUIStore();
 
   // Apply dark mode to document
   useEffect(() => {
@@ -33,12 +34,18 @@ function App() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
       <TabBar />
-      <Controls />
+
+      {/* Only show controls when viewing a team, not the dashboard */}
+      {!showDashboard && <Controls />}
 
       <main className="container mx-auto px-6 py-8">
-        <div className="card">
-          <StatsTable />
-        </div>
+        {showDashboard ? (
+          <Dashboard />
+        ) : (
+          <div className="card">
+            <StatsTable />
+          </div>
+        )}
       </main>
 
       {/* Modals */}
