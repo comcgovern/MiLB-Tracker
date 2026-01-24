@@ -55,7 +55,7 @@ async function fetchLastSeasonStats(currentYear: number): Promise<StatsFile> {
 }
 
 export function StatsTable() {
-  const { activeTeamId, activeSplit, customDateRange, openGameLog } = useUIStore();
+  const { activeTeamId, activeSplit, customDateRange, openGameLog, openConfirmModal } = useUIStore();
   const { removePlayerFromTeam } = useTeamPlayers(activeTeamId);
 
   // Fetch team players from IndexedDB
@@ -105,10 +105,16 @@ export function StatsTable() {
     enabled: activeSplit === 'lastSeason', // Only fetch when needed
   });
 
-  const handleRemovePlayer = async (teamPlayerId: string, playerName: string) => {
-    if (confirm(`Remove ${playerName} from this team?`)) {
-      await removePlayerFromTeam(teamPlayerId);
-    }
+  const handleRemovePlayer = (teamPlayerId: string, playerName: string) => {
+    openConfirmModal({
+      title: 'Remove Player',
+      message: `Remove ${playerName} from this team?`,
+      confirmLabel: 'Remove',
+      variant: 'danger',
+      onConfirm: async () => {
+        await removePlayerFromTeam(teamPlayerId);
+      },
+    });
   };
 
   const handlePlayerClick = (player: Player) => {
