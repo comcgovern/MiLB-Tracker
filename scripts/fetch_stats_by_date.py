@@ -627,7 +627,7 @@ def update_meta() -> None:
         }, f)
 
 
-def fetch_and_update_for_date(date_str: str, max_workers: int = 10) -> dict:
+def fetch_and_update_for_date(date_str: str, max_workers: int = 100) -> dict:
     """Fetch stats for all players who played on a specific date."""
     client = APIClient()
 
@@ -702,7 +702,7 @@ def update_monthly_stats(all_stats: dict, year: int, month: int) -> int:
     return updated_count
 
 
-def fetch_date(date_str: str, max_workers: int = 10) -> None:
+def fetch_date(date_str: str, max_workers: int = 100) -> None:
     """Fetch and save stats for a specific date."""
     date_obj = datetime.strptime(date_str, '%Y-%m-%d')
     year = date_obj.year
@@ -716,7 +716,7 @@ def fetch_date(date_str: str, max_workers: int = 10) -> None:
         update_meta()
 
 
-def fetch_month(year: int, month: int, max_workers: int = 10) -> None:
+def fetch_month(year: int, month: int, max_workers: int = 100) -> None:
     """Fetch stats for an entire month."""
     logger.info(f"Fetching all games for {year}-{month:02d}...")
 
@@ -773,7 +773,7 @@ def fetch_month(year: int, month: int, max_workers: int = 10) -> None:
         update_meta()
 
 
-def fetch_year(year: int, max_workers: int = 10) -> None:
+def fetch_year(year: int, max_workers: int = 100) -> None:
     """Fetch stats for all season months of a year."""
     logger.info(f"Fetching all season months for {year}...")
 
@@ -810,8 +810,8 @@ Examples:
     group.add_argument('--year', type=int,
                        help='Fetch full season for year (April-September)')
 
-    parser.add_argument('--workers', type=int, default=10,
-                        help='Number of parallel workers (default: 10)')
+    parser.add_argument('--workers', type=int, default=100,
+                        help='Number of parallel workers (default: 100)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging')
 
