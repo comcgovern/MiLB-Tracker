@@ -27,7 +27,7 @@ on:
       workers:
         description: 'Number of parallel workers'
         required: false
-        default: '10'
+        default: '100'
         type: string
       debug:
         description: 'Enable debug logging'

@@ -13,9 +13,9 @@ on:
   # Trigger deployment after stats workflows complete
   workflow_run:
     workflows:
-      - "Update MiLB Stats"
+      - "Nightly Stats Update"
       - "Build Player Index"
-      - "Add Player"
+      - "Backfill Historical Stats"
     types:
       - completed
     branches: [main]
@@ -40,6 +40,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need at least 2 commits to compare changes
+
+      - name: Check if only data files changed
+        id: check_changes
+        run: |
+          # Get list of changed files in the last commit
+          if git diff --name-only HEAD^ HEAD | grep -qvE '^data/'; then
+            echo "code_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "code_changed=false" >> $GITHUB_OUTPUT
+          fi
+          echo "Code changed: $(cat $GITHUB_OUTPUT | grep code_changed | cut -d= -f2)"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -47,16 +60,37 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Restore cached build
+        if: steps.check_changes.outputs.code_changed == 'false'
+        id: cache_build
+        uses: actions/cache@v4
+        with:
+          path: dist
+          key: vite-build-${{ hashFiles('src/**', 'public/**', 'index.html', 'package-lock.json', 'vite.config.ts') }}
+          restore-keys: |
+            vite-build-
+
       - name: Install dependencies
+        if: steps.check_changes.outputs.code_changed == 'true' || steps.cache_build.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Build
+        if: steps.check_changes.outputs.code_changed == 'true' || steps.cache_build.outputs.cache-hit != 'true'
         run: npm run build
         env:
           VITE_BASE_PATH: '/${{ github.event.repository.name }}'
 
+      - name: Save build cache
+        if: steps.check_changes.outputs.code_changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist
+          key: vite-build-${{ hashFiles('src/**', 'public/**', 'index.html', 'package-lock.json', 'vite.config.ts') }}
+
       - name: Copy data files
-        run: cp -r data dist/data
+        run: |
+          rm -rf dist/data
+          cp -r data dist/data
 
       - name: Disable Jekyll
         run: touch dist/.nojekyll
