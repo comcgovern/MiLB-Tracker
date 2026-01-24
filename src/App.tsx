@@ -10,6 +10,7 @@ import { AddTeamModal } from './components/AddTeamModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { DateRangeModal } from './components/DateRangeModal';
 import { GameLogModal } from './components/GameLogModal';
+import { ConfirmModal } from './components/ConfirmModal';
 
 function App() {
   const { darkMode } = useSettingsStore();
@@ -60,6 +61,7 @@ function App() {
         player={gameLogPlayer}
         onClose={closeGameLog}
       />
+      <ConfirmModal />
     </div>
   );
 }

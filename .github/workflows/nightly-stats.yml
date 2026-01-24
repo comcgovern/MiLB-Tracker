@@ -2,8 +2,8 @@ name: Nightly Stats Update
 
 on:
   schedule:
-    # Run at 3:30 AM UTC every day during the season (April-September)
-    - cron: '30 3 * 4-9 *'
+    # Run at 12:01 AM UTC every day during the season (April-September)
+    - cron: '1 0 * 4-9 *'
   workflow_dispatch:
     inputs:
       debug:

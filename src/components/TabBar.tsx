@@ -1,4 +1,5 @@
 // components/TabBar.tsx
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
@@ -9,20 +10,79 @@ export function TabBar() {
     db.teams.orderBy('displayOrder').toArray()
   );
 
-  const { activeTeamId, showDashboard, goToDashboard, goToTeam, openAddTeamModal } = useUIStore();
-  const { deleteTeam } = useTeams();
+  const { activeTeamId, showDashboard, goToDashboard, goToTeam, openAddTeamModal, openConfirmModal } = useUIStore();
+  const { deleteTeam, reorderTeams } = useTeams();
 
-  const handleDeleteTeam = async (e: React.MouseEvent, teamId: string, teamName: string) => {
+  // Drag and drop state
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const handleDeleteTeam = (e: React.MouseEvent, teamId: string, teamName: string) => {
     e.stopPropagation(); // Prevent tab selection
 
-    if (confirm(`Delete team "${teamName}" and all its players? This cannot be undone.`)) {
-      await deleteTeam(teamId);
+    openConfirmModal({
+      title: 'Delete Team',
+      message: `Delete team "${teamName}" and all its players? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+      onConfirm: async () => {
+        await deleteTeam(teamId);
+        // If we deleted the active team, go back to dashboard
+        if (activeTeamId === teamId) {
+          goToDashboard();
+        }
+      },
+    });
+  };
 
-      // If we deleted the active team, go back to dashboard
-      if (activeTeamId === teamId) {
-        goToDashboard();
-      }
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, teamId: string) => {
+    setDraggedId(teamId);
+    e.dataTransfer.effectAllowed = 'move';
+    // Add a slight delay to allow the drag image to be captured
+    setTimeout(() => {
+      (e.target as HTMLElement).style.opacity = '0.5';
+    }, 0);
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    (e.target as HTMLElement).style.opacity = '1';
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, teamId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (teamId !== draggedId) {
+      setDragOverId(teamId);
     }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    setDragOverId(null);
+
+    if (!draggedId || draggedId === targetId || !teams) return;
+
+    // Calculate new order
+    const teamIds = teams.map(t => t.id!);
+    const draggedIndex = teamIds.indexOf(draggedId);
+    const targetIndex = teamIds.indexOf(targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Remove dragged item and insert at new position
+    const newOrder = [...teamIds];
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(targetIndex, 0, draggedId);
+
+    await reorderTeams(newOrder);
+    setDraggedId(null);
   };
 
   return (
@@ -50,11 +110,24 @@ export function TabBar() {
 
         {/* Team Tabs */}
         {teams?.map((team) => (
-          <div key={team.id} className="relative group">
+          <div
+            key={team.id}
+            className={`
+              relative group
+              ${dragOverId === team.id ? 'border-l-2 border-primary-500' : ''}
+              ${draggedId === team.id ? 'opacity-50' : ''}
+            `}
+            draggable
+            onDragStart={(e) => handleDragStart(e, team.id!)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, team.id!)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, team.id!)}
+          >
             <button
               onClick={() => goToTeam(team.id!)}
               className={`
-                px-4 py-3 font-medium whitespace-nowrap border-b-2 transition-colors
+                px-4 py-3 font-medium whitespace-nowrap border-b-2 transition-colors cursor-grab active:cursor-grabbing
                 ${
                   !showDashboard && activeTeamId === team.id
                     ? 'border-primary-600 text-primary-600 dark:text-primary-400'

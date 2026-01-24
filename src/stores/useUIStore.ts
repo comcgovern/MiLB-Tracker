@@ -2,6 +2,15 @@
 import { create } from 'zustand';
 import type { Split, Player } from '../types';
 
+interface ConfirmModalState {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm: () => void;
+  variant?: 'danger' | 'default';
+}
+
 interface UIStore {
   activeTeamId: string | null;
   activeSplit: Split;
@@ -13,6 +22,7 @@ interface UIStore {
   selectedPlayerIds: string[];
   customDateRange: { start: string; end: string } | null;
   gameLogPlayer: Player | null;  // Player to show game log for
+  confirmModal: ConfirmModalState | null;  // Confirm modal state
 
   setActiveTeamId: (teamId: string | null) => void;
   setActiveSplit: (split: Split) => void;
@@ -33,6 +43,8 @@ interface UIStore {
   clearPlayerSelection: () => void;
   openGameLog: (player: Player) => void;
   closeGameLog: () => void;
+  openConfirmModal: (state: ConfirmModalState) => void;
+  closeConfirmModal: () => void;
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -46,6 +58,7 @@ export const useUIStore = create<UIStore>((set) => ({
   selectedPlayerIds: [],
   customDateRange: null,
   gameLogPlayer: null,
+  confirmModal: null,
 
   setActiveTeamId: (teamId) =>
     set({ activeTeamId: teamId }),
@@ -107,4 +120,10 @@ export const useUIStore = create<UIStore>((set) => ({
 
   closeGameLog: () =>
     set({ gameLogPlayer: null }),
+
+  openConfirmModal: (state) =>
+    set({ confirmModal: state }),
+
+  closeConfirmModal: () =>
+    set({ confirmModal: null }),
 }));
