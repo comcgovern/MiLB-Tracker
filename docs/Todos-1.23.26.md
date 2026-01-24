@@ -17,6 +17,7 @@
 7. Create SettingsModal component - button exists in header but modal not implemented
 8. Add CSV export functionality (Spec 2.8.2)
 9. Implement charts with Recharts - package installed but unused
+10. Pitcher BABIP doesn't calculate correctly, either implement or remove
 
 #### Medium Priority
 10. Fix type safety issues - remove `(player as any).fangraphsId` casts in types/index.ts and GameLogModal.tsx
@@ -28,6 +29,6 @@
 
 #### Lower Priority (Phase 2+ features from spec)
 13. Player comparison tool (Spec 2.8.1)
-14. Additional splits: vs LHP/RHP, Home/Away, by Month (Spec 2.5)
+14. Additional splits: vs Left/Right, Home/Away (Spec 2.5)
 15. Alerts & notifications system (Spec 2.6)
-16. Statcast data display (currently shows "Coming Soon")
+16. STATCAST SUPPORT
