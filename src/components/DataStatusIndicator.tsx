@@ -1,6 +1,6 @@
 // components/DataStatusIndicator.tsx
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { MetaData } from '../types';
 
 async function fetchMeta(): Promise<MetaData> {
@@ -34,8 +34,6 @@ function isStale(dateString: string, thresholdHours: number = 6): boolean {
 }
 
 export function DataStatusIndicator() {
-  const queryClient = useQueryClient();
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
   const { data: meta, isLoading, isError, refetch } = useQuery({
@@ -44,21 +42,6 @@ export function DataStatusIndicator() {
     staleTime: 1000 * 60 * 5, // 5 minutes
     refetchInterval: 1000 * 60 * 5, // Refetch every 5 minutes
   });
-
-  const handleRefreshAll = async () => {
-    setIsRefreshing(true);
-    try {
-      // Invalidate all data queries to force a fresh fetch
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['meta'] }),
-        queryClient.invalidateQueries({ queryKey: ['stats'] }),
-        queryClient.invalidateQueries({ queryKey: ['players'] }),
-        queryClient.invalidateQueries({ queryKey: ['player-index'] }),
-      ]);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -113,29 +96,6 @@ export function DataStatusIndicator() {
         </span>
       )}
 
-      {/* Refresh button */}
-      <button
-        onClick={handleRefreshAll}
-        disabled={isRefreshing}
-        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
-        title="Refresh cached data"
-      >
-        <svg
-          className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
-        Refresh
-      </button>
-
       {/* Info button */}
       <div className="relative">
         <button
@@ -158,13 +118,10 @@ export function DataStatusIndicator() {
               </p>
               <ul className="space-y-1.5">
                 <li>
-                  <span className="font-medium">Auto updates:</span> Stats refresh every 4 hours during the season (daily off-season)
+                  <span className="font-medium">Auto updates:</span> Stats refresh daily at midnight UTC during the season
                 </li>
                 <li>
                   <span className="font-medium">New players:</span> Added players will have stats fetched in the next scheduled update
-                </li>
-                <li>
-                  <span className="font-medium">Refresh button:</span> Re-fetches cached data from the server (doesn't trigger new data collection)
                 </li>
               </ul>
             </div>

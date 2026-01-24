@@ -1,4 +1,4 @@
-1. need to fix unreadable text in headers in night mode on dashboard cards
-2. need to figure out some way to prune players from the index who havent played a minor league game in over a year
-3. refresh button doesnt do anything. not sure what its supposed to do, maybe refresh the player index but i think we can just get rid of it
-4. long term, maybe we can look at more frequent refresh of data during the season so its basically live data? not sure how realistic this is
+1. ~~need to fix unreadable text in headers in night mode on dashboard cards~~ FIXED: Changed invalid `dark:bg-gray-750` to `dark:bg-gray-700` in DashboardCard.tsx
+2. ~~need to figure out some way to prune players from the index who havent played a minor league game in over a year~~ FIXED: Added pruning logic to build_player_index.py - players inactive for 365+ days are now automatically removed from the index
+3. ~~refresh button doesnt do anything. not sure what its supposed to do, maybe refresh the player index but i think we can just get rid of it~~ FIXED: Removed the refresh button from DataStatusIndicator.tsx
+4. long term, maybe we can look at more frequent refresh of data during the season so its basically live data? not sure how realistic this is - SHELVED for now; updated schedule to run at 12:01 AM UTC nightly
