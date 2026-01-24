@@ -1,18 +1,8 @@
 // components/GameLogModal.tsx
 import { useQuery } from '@tanstack/react-query';
-import type { StatsFile, Player } from '../types';
+import type { Player } from '../types';
 import { formatStatValue } from '../config/statCategories';
-
-async function fetchStats(): Promise<StatsFile> {
-  const basePath = import.meta.env.VITE_BASE_PATH || '';
-  const year = new Date().getFullYear();
-  let response = await fetch(`${basePath}/data/stats/${year}.json`);
-  if (!response.ok) {
-    response = await fetch(`${basePath}/data/stats/${year - 1}.json`);
-  }
-  if (!response.ok) throw new Error('Failed to fetch stats');
-  return response.json();
-}
+import { fetchCurrentSeasonStats } from '../utils/statsService';
 
 interface GameLogModalProps {
   player: Player | null;
@@ -20,10 +10,11 @@ interface GameLogModalProps {
 }
 
 export function GameLogModal({ player, onClose }: GameLogModalProps) {
-  const { data: statsData, isLoading, isError } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['stats'],
-    queryFn: fetchStats,
+    queryFn: fetchCurrentSeasonStats,
   });
+  const statsData = data?.stats;
 
   if (!player) return null;
 
