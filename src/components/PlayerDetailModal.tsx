@@ -204,10 +204,19 @@ function GameLogTab({ isLoading, isError, gameLog, isBatter }: GameLogTabProps) 
     );
   }
 
-  if (!gameLog || gameLog.length === 0) {
+  // Filter to current season and sort newest first
+  const currentYear = new Date().getFullYear();
+  const filteredGameLog = gameLog
+    ?.filter((game) => {
+      const gameYear = new Date(game.date).getFullYear();
+      return gameYear === currentYear;
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (!filteredGameLog || filteredGameLog.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-        No game log data available
+        No game log data available for current season
       </div>
     );
   }
@@ -234,7 +243,7 @@ function GameLogTab({ isLoading, isError, gameLog, isBatter }: GameLogTabProps) 
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-          {gameLog.map((game, index) => (
+          {filteredGameLog.map((game, index) => (
             <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800">
               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                 {formatGameDate(game.date)}

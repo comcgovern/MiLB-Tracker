@@ -112,9 +112,11 @@ export interface PitchingStats {
   'K/BB'?: number;
   'K%'?: number;
   'BB%'?: number;
+  'K%-BB%'?: number;
   FIP?: number;
   xFIP?: number;
   BABIP?: number;
+  'CSW%'?: number;
 
   // Statcast
   Velo?: number;
