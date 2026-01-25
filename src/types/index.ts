@@ -16,7 +16,7 @@ export interface Player {
 
 // Helper to get the primary ID from a player object (supports both new and legacy)
 export function getPlayerId(player: Player | IndexedPlayer): string {
-  return player.mlbId || (player as any).fangraphsId || '';
+  return player.mlbId || player.fangraphsId || '';
 }
 
 export interface Team {

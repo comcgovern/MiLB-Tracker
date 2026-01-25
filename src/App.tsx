@@ -9,8 +9,9 @@ import { Dashboard } from './components/Dashboard';
 import { AddTeamModal } from './components/AddTeamModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { DateRangeModal } from './components/DateRangeModal';
-import { GameLogModal } from './components/GameLogModal';
+import { PlayerDetailModal } from './components/PlayerDetailModal';
 import { ConfirmModal } from './components/ConfirmModal';
+import { SettingsModal } from './components/SettingsModal';
 
 function App() {
   const { darkMode } = useSettingsStore();
@@ -57,11 +58,12 @@ function App() {
         onClose={closeDateRangeModal}
         onApply={handleApplyDateRange}
       />
-      <GameLogModal
+      <PlayerDetailModal
         player={gameLogPlayer}
         onClose={closeGameLog}
       />
       <ConfirmModal />
+      <SettingsModal />
     </div>
   );
 }

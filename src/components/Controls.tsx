@@ -47,14 +47,6 @@ export function Controls() {
             </select>
           </div>
 
-          {/* Custom Range Button */}
-          <button
-            onClick={openDateRangeModal}
-            className="btn-secondary text-sm"
-          >
-            📅 Custom Range
-          </button>
-
           {/* Show custom range if set */}
           {customDateRange && (
             <div className="text-sm text-gray-600 dark:text-gray-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded">
