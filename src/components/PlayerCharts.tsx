@@ -15,7 +15,6 @@ import type { GameLogEntry, BattingStats, PitchingStats } from '../types';
 interface PlayerChartsProps {
   gameLog: GameLogEntry[];
   isBatter: boolean;
-  playerName: string;
 }
 
 type ChartMetric = {
@@ -40,7 +39,7 @@ const PITCHER_METRICS: ChartMetric[] = [
   { key: 'IP', label: 'Innings Pitched', color: '#8b5cf6', format: (v) => v.toFixed(1) },
 ];
 
-export function PlayerCharts({ gameLog, isBatter, playerName }: PlayerChartsProps) {
+export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
   const metrics = isBatter ? BATTER_METRICS : PITCHER_METRICS;
   const [selectedMetric, setSelectedMetric] = useState<string>(metrics[0].key);
   const [viewMode, setViewMode] = useState<'game' | 'rolling'>('rolling');
