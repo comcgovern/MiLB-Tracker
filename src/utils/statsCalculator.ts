@@ -208,9 +208,14 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
   if (bf > 0) {
     totals['K%'] = Math.round((so / bf) * 1000) / 1000;
     totals['BB%'] = Math.round((bb / bf) * 1000) / 1000;
+  }
 
-    // BABIP for pitchers = (H - HR) / (BF - SO - HR - BB - HBP)
-    const babipDenom = bf - so - hr - bb - hbp;
+  // BABIP for pitchers uses same formula as batters: (H - HR) / (AB - K - HR + SF)
+  // Since we don't have AB or SF for pitchers, we estimate:
+  // AB ≈ 3 * IP + H (outs per inning + hits)
+  // BABIP = (H - HR) / (AB - K - HR) = (H - HR) / (3*IP + H - SO - HR)
+  if (ip > 0) {
+    const babipDenom = 3 * ip + h - so - hr;
     if (babipDenom > 0) {
       totals.BABIP = Math.round(((h - hr) / babipDenom) * 1000) / 1000;
     }

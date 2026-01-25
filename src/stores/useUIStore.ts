@@ -19,7 +19,6 @@ interface UIStore {
   isAddTeamModalOpen: boolean;
   isSettingsModalOpen: boolean;
   isDateRangeModalOpen: boolean;
-  selectedPlayerIds: string[];
   customDateRange: { start: string; end: string } | null;
   gameLogPlayer: Player | null;  // Player to show game log for
   confirmModal: ConfirmModalState | null;  // Confirm modal state
@@ -39,8 +38,6 @@ interface UIStore {
   closeDateRangeModal: () => void;
   setCustomDateRange: (start: string, end: string) => void;
   clearCustomDateRange: () => void;
-  togglePlayerSelection: (playerId: string) => void;
-  clearPlayerSelection: () => void;
   openGameLog: (player: Player) => void;
   closeGameLog: () => void;
   openConfirmModal: (state: ConfirmModalState) => void;
@@ -55,7 +52,6 @@ export const useUIStore = create<UIStore>((set) => ({
   isAddTeamModalOpen: false,
   isSettingsModalOpen: false,
   isDateRangeModalOpen: false,
-  selectedPlayerIds: [],
   customDateRange: null,
   gameLogPlayer: null,
   confirmModal: null,
@@ -104,16 +100,6 @@ export const useUIStore = create<UIStore>((set) => ({
 
   clearCustomDateRange: () =>
     set({ customDateRange: null }),
-
-  togglePlayerSelection: (playerId) =>
-    set((state) => ({
-      selectedPlayerIds: state.selectedPlayerIds.includes(playerId)
-        ? state.selectedPlayerIds.filter((id) => id !== playerId)
-        : [...state.selectedPlayerIds, playerId],
-    })),
-
-  clearPlayerSelection: () =>
-    set({ selectedPlayerIds: [] }),
 
   openGameLog: (player) =>
     set({ gameLogPlayer: player }),

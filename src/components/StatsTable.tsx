@@ -5,7 +5,7 @@ import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
 import { useTeamPlayers } from '../hooks/useTeamPlayers';
 import { PlayerStatsTable } from './PlayerStatsTable';
-import type { PlayersRegistry, StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, PlayerStatsData } from '../types';
+import type { StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, PlayerStatsData } from '../types';
 import { getPlayerId } from '../types';
 import {
   calculateStatsForSplit,
@@ -21,7 +21,8 @@ import {
   fetchCurrentSeasonStats,
   fetchSeasonStats,
 } from '../utils/statsService';
-import type { MiLBLevel, StatsByLevel } from '../types';
+import { exportToCSV, downloadCSV, generateExportFilename } from '../utils/csvExport';
+import type { MiLBLevel, StatsByLevel, PlayersRegistry } from '../types';
 
 async function fetchPlayers(): Promise<PlayersRegistry> {
   const basePath = import.meta.env.VITE_BASE_PATH || '';
@@ -104,6 +105,27 @@ export function StatsTable() {
     queryFn: () => fetchLastSeasonStats(currentSeasonYear),
     enabled: activeSplit === 'lastSeason', // Only fetch when needed
   });
+
+  // Fetch team info for export
+  const activeTeam = useLiveQuery(
+    () => activeTeamId ? db.teams.get(activeTeamId) : undefined,
+    [activeTeamId]
+  );
+
+  // Get split label for export filename
+  const getSplitLabel = (): string => {
+    switch (activeSplit) {
+      case 'yesterday': return 'Yesterday';
+      case 'today': return 'Today';
+      case 'last7': return 'Last 7 Days';
+      case 'last14': return 'Last 14 Days';
+      case 'last30': return 'Last 30 Days';
+      case 'season': return 'Season';
+      case 'lastSeason': return 'Last Season';
+      case 'custom': return customDateRange ? `${customDateRange.start} to ${customDateRange.end}` : 'Custom';
+      default: return '';
+    }
+  };
 
   const handleRemovePlayer = (teamPlayerId: string, playerName: string) => {
     openConfirmModal({
@@ -375,8 +397,46 @@ export function StatsTable() {
     }
   });
 
+  // Handle CSV export
+  const handleExport = () => {
+    const csvContent = exportToCSV({
+      batters: batters.map(b => ({
+        player: b.player,
+        stats: b.stats,
+        level: b.level,
+        isTotal: b.isTotal,
+      })),
+      pitchers: pitchers.map(p => ({
+        player: p.player,
+        stats: p.stats,
+        level: p.level,
+        isTotal: p.isTotal,
+      })),
+      teamName: activeTeam?.name,
+      splitLabel: getSplitLabel(),
+    });
+
+    const filename = generateExportFilename(activeTeam?.name, getSplitLabel());
+    downloadCSV(csvContent, filename);
+  };
+
   return (
     <div className="p-4">
+      {/* Export button */}
+      {(batters.length > 0 || pitchers.length > 0) && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={handleExport}
+            className="btn-secondary text-sm flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Export CSV
+          </button>
+        </div>
+      )}
+
       {batters.length > 0 && (
         <PlayerStatsTable
           title="Batters"
