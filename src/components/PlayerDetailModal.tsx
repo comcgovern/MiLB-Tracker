@@ -1,7 +1,7 @@
 // components/PlayerDetailModal.tsx
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Player, BattingStats, PitchingStats, GameLogEntry } from '../types';
+import type { Player, GameLogEntry } from '../types';
 import { formatStatValue } from '../config/statCategories';
 import { fetchCurrentSeasonStats } from '../utils/statsService';
 import { PlayerCharts } from './PlayerCharts';
@@ -131,7 +131,6 @@ export function PlayerDetailModal({ player, onClose }: PlayerDetailModalProps) {
             <ChartsTab
               gameLog={gameLog}
               isBatter={isBatter}
-              playerName={player.name}
             />
           )}
           {activeTab === 'info' && (
@@ -268,10 +267,9 @@ function GameLogTab({ isLoading, isError, gameLog, isBatter }: GameLogTabProps) 
 interface ChartsTabProps {
   gameLog: GameLogEntry[] | undefined;
   isBatter: boolean;
-  playerName: string;
 }
 
-function ChartsTab({ gameLog, isBatter, playerName }: ChartsTabProps) {
+function ChartsTab({ gameLog, isBatter }: ChartsTabProps) {
   if (!gameLog || gameLog.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500 dark:text-gray-400">
@@ -282,7 +280,7 @@ function ChartsTab({ gameLog, isBatter, playerName }: ChartsTabProps) {
 
   return (
     <div className="p-6">
-      <PlayerCharts gameLog={gameLog} isBatter={isBatter} playerName={playerName} />
+      <PlayerCharts gameLog={gameLog} isBatter={isBatter} />
     </div>
   );
 }
