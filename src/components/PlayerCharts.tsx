@@ -41,7 +41,7 @@ const PITCHER_METRICS: ChartMetric[] = [
 
 // Rolling window sizes
 const BATTER_ROLLING_PA = 100;  // Rolling 100 PAs for batters
-const PITCHER_ROLLING_IP = 25;   // Rolling 25 IP for pitchers
+const PITCHER_ROLLING_IP = 9;    // Rolling 9 IP for pitchers
 
 export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
   const metrics = isBatter ? BATTER_METRICS : PITCHER_METRICS;
