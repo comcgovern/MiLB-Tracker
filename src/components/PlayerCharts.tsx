@@ -27,17 +27,21 @@ type ChartMetric = {
 const BATTER_METRICS: ChartMetric[] = [
   { key: 'AVG', label: 'Batting Average', color: '#3b82f6', format: (v) => v.toFixed(3) },
   { key: 'OPS', label: 'OPS', color: '#10b981', format: (v) => v.toFixed(3) },
-  { key: 'HR', label: 'Home Runs', color: '#f59e0b' },
-  { key: 'RBI', label: 'RBIs', color: '#ef4444' },
-  { key: 'SB', label: 'Stolen Bases', color: '#8b5cf6' },
+  { key: 'wOBA', label: 'wOBA', color: '#f59e0b', format: (v) => v.toFixed(3) },
+  { key: 'SLG', label: 'Slugging', color: '#ef4444', format: (v) => v.toFixed(3) },
 ];
 
 const PITCHER_METRICS: ChartMetric[] = [
   { key: 'ERA', label: 'ERA', color: '#3b82f6', format: (v) => v.toFixed(2) },
   { key: 'WHIP', label: 'WHIP', color: '#10b981', format: (v) => v.toFixed(2) },
-  { key: 'SO', label: 'Strikeouts', color: '#f59e0b' },
-  { key: 'IP', label: 'Innings Pitched', color: '#8b5cf6', format: (v) => v.toFixed(1) },
+  { key: 'K/9', label: 'K/9', color: '#f59e0b', format: (v) => v.toFixed(2) },
+  { key: 'K%-BB%', label: 'K% - BB%', color: '#8b5cf6', format: (v) => (v * 100).toFixed(1) + '%' },
+  { key: 'CSW%', label: 'CSW%', color: '#ec4899', format: (v) => (v * 100).toFixed(1) + '%' },
 ];
+
+// Rolling window sizes
+const BATTER_ROLLING_PA = 100;  // Rolling 100 PAs for batters
+const PITCHER_ROLLING_IP = 25;   // Rolling 25 IP for pitchers
 
 export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
   const metrics = isBatter ? BATTER_METRICS : PITCHER_METRICS;
@@ -67,13 +71,10 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
         };
       });
     } else {
-      // Rolling average view (7-game rolling)
-      const windowSize = Math.min(7, sortedGames.length);
+      // Rolling average view based on PA (batters) or IP (pitchers)
       return sortedGames.map((game, index) => {
-        // Calculate rolling stats up to this game
-        const windowStart = Math.max(0, index - windowSize + 1);
-        const windowGames = sortedGames.slice(windowStart, index + 1);
-
+        // Get window of games that meets our threshold
+        const windowGames = getWindowGames(sortedGames, index, isBatter);
         const rollingValue = calculateRollingValue(windowGames, selectedMetric, isBatter);
 
         return {
@@ -162,7 +163,7 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
       {/* Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
-          {selectedMetricConfig.label} {viewMode === 'rolling' ? '(7-Game Rolling)' : '(Per Game)'}
+          {selectedMetricConfig.label} {viewMode === 'rolling' ? (isBatter ? `(Last ${BATTER_ROLLING_PA} PA)` : `(Last ${PITCHER_ROLLING_IP} IP)`) : '(Per Game)'}
         </h4>
 
         {chartData.length > 0 ? (
@@ -237,6 +238,40 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
   );
 }
 
+// Helper function to get window of games based on PA (batters) or IP (pitchers)
+function getWindowGames(
+  sortedGames: GameLogEntry[],
+  currentIndex: number,
+  isBatter: boolean
+): GameLogEntry[] {
+  const targetThreshold = isBatter ? BATTER_ROLLING_PA : PITCHER_ROLLING_IP;
+  const windowGames: GameLogEntry[] = [];
+  let accumulated = 0;
+
+  // Work backwards from current game
+  for (let i = currentIndex; i >= 0; i--) {
+    const game = sortedGames[i];
+    const stats = game.stats as BattingStats | PitchingStats;
+
+    if (isBatter) {
+      const pa = (stats as BattingStats)?.PA ?? 0;
+      accumulated += pa;
+    } else {
+      const ip = (stats as PitchingStats)?.IP ?? 0;
+      accumulated += ip;
+    }
+
+    windowGames.unshift(game);
+
+    // Stop once we've accumulated enough PA/IP
+    if (accumulated >= targetThreshold) {
+      break;
+    }
+  }
+
+  return windowGames;
+}
+
 // Helper function to calculate rolling value
 function calculateRollingValue(
   games: GameLogEntry[],
@@ -244,15 +279,6 @@ function calculateRollingValue(
   isBatter: boolean
 ): number {
   if (games.length === 0) return 0;
-
-  // For counting stats, sum them up
-  const countingStats = ['HR', 'RBI', 'SB', 'SO', 'BB', 'H', 'R'];
-  if (countingStats.includes(metric)) {
-    return games.reduce((sum, game) => {
-      const stats = game.stats as BattingStats | PitchingStats;
-      return sum + ((stats?.[metric as keyof typeof stats] as number) ?? 0);
-    }, 0);
-  }
 
   // For rate stats, calculate from counting stats
   if (isBatter) {
@@ -280,17 +306,35 @@ function calculateRollingValue(
       const slg = totals.AB > 0 ? tb / totals.AB : 0;
       return obp + slg;
     }
+    if (metric === 'SLG' && totals.AB > 0) {
+      const singles = totals.H - totals['2B'] - totals['3B'] - totals.HR;
+      const tb = singles + 2 * totals['2B'] + 3 * totals['3B'] + 4 * totals.HR;
+      return tb / totals.AB;
+    }
+    if (metric === 'wOBA' && totals.PA > 0) {
+      // wOBA linear weights (FanGraphs 2024 approximation)
+      const singles = totals.H - totals['2B'] - totals['3B'] - totals.HR;
+      const wOBA = (0.69 * totals.BB + 0.72 * totals.HBP + 0.88 * singles +
+                   1.24 * totals['2B'] + 1.56 * totals['3B'] + 1.95 * totals.HR) / totals.PA;
+      return wOBA;
+    }
   } else {
     // Pitcher rate stats
     const totals = games.reduce((acc, game) => {
       const stats = game.stats as PitchingStats;
+      // Estimate batters faced: IP * 3 + H + BB (approximation)
+      const bf = (stats?.IP ?? 0) * 3 + (stats?.H ?? 0) + (stats?.BB ?? 0);
       return {
         IP: acc.IP + (stats?.IP ?? 0),
         ER: acc.ER + (stats?.ER ?? 0),
         H: acc.H + (stats?.H ?? 0),
         BB: acc.BB + (stats?.BB ?? 0),
+        SO: acc.SO + (stats?.SO ?? 0),
+        BF: acc.BF + bf,
+        CSW: acc.CSW + ((stats as PitchingStats & { CSW?: number })?.CSW ?? 0),
+        pitches: acc.pitches + ((stats as PitchingStats & { pitches?: number })?.pitches ?? 0),
       };
-    }, { IP: 0, ER: 0, H: 0, BB: 0 });
+    }, { IP: 0, ER: 0, H: 0, BB: 0, SO: 0, BF: 0, CSW: 0, pitches: 0 });
 
     if (metric === 'ERA' && totals.IP > 0) {
       return (9 * totals.ER) / totals.IP;
@@ -298,8 +342,22 @@ function calculateRollingValue(
     if (metric === 'WHIP' && totals.IP > 0) {
       return (totals.H + totals.BB) / totals.IP;
     }
-    if (metric === 'IP') {
-      return totals.IP;
+    if (metric === 'K/9' && totals.IP > 0) {
+      return (9 * totals.SO) / totals.IP;
+    }
+    if (metric === 'K%-BB%' && totals.BF > 0) {
+      const kPct = totals.SO / totals.BF;
+      const bbPct = totals.BB / totals.BF;
+      return kPct - bbPct;
+    }
+    if (metric === 'CSW%') {
+      // CSW% requires pitch-level data. If we have it aggregated, use it
+      // Otherwise, estimate from available stats or return 0
+      if (totals.pitches > 0 && totals.CSW > 0) {
+        return totals.CSW / totals.pitches;
+      }
+      // If no pitch data available, return null/0
+      return 0;
     }
   }
 
