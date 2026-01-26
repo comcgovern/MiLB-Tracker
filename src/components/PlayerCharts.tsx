@@ -325,7 +325,38 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
                 }}
                 labelStyle={{ color: '#9ca3af' }}
               />
-              <Legend />
+              <Legend
+                content={({ payload }) => (
+                  <div className="flex flex-wrap items-center justify-center gap-4 mt-2 text-xs">
+                    {/* Metric legend item */}
+                    {payload?.map((entry, index) => (
+                      <div key={`legend-${index}`} className="flex items-center gap-1.5">
+                        <div
+                          className="w-4 h-0.5"
+                          style={{ backgroundColor: entry.color }}
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">{entry.value}</span>
+                      </div>
+                    ))}
+                    {/* Level legend items */}
+                    {showLevelIndicators && levelsInData.length > 0 && (
+                      <>
+                        <span className="text-gray-400 dark:text-gray-500 mx-1">|</span>
+                        <span className="text-gray-500 dark:text-gray-400">Levels:</span>
+                        {levelsInData.map((level) => (
+                          <div key={`level-${level}`} className="flex items-center gap-1">
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: LEVEL_COLORS[level] }}
+                            />
+                            <span className="text-gray-700 dark:text-gray-300">{LEVEL_LABELS[level]}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              />
 
               {/* Vertical lines for level changes */}
               {showLevelIndicators && levelChanges.map((change, index) => (
@@ -390,22 +421,10 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
         )}
       </div>
 
-      {/* Level Legend */}
+      {/* Chart legend hint - only show when level indicators are on */}
       {showLevelIndicators && levelsInData.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          <span className="text-gray-600 dark:text-gray-400">Levels:</span>
-          {levelsInData.map((level) => (
-            <div key={level} className="flex items-center gap-1">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: LEVEL_COLORS[level] }}
-              />
-              <span className="text-gray-700 dark:text-gray-300">{LEVEL_LABELS[level]}</span>
-            </div>
-          ))}
-          <span className="text-gray-500 dark:text-gray-500 ml-2">
-            (Vertical lines = level changes, Horizontal dashed = league avg)
-          </span>
+        <div className="text-center text-xs text-gray-500 dark:text-gray-500">
+          Vertical dashed lines = level changes | Horizontal dashed lines = league average
         </div>
       )}
 

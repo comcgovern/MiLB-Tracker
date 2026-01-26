@@ -1,18 +1,24 @@
 // components/PlayerDetailModal.tsx
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Player, GameLogEntry } from '../types';
+import type { Player, GameLogEntry, BattingStats, PitchingStats } from '../types';
 import { formatStatValue } from '../config/statCategories';
 import { fetchCurrentSeasonStats } from '../utils/statsService';
 import { PlayerCharts } from './PlayerCharts';
 import { useLeagueAverages } from '../hooks/useLeagueAverages';
+import {
+  calculateAllSituationalSplits,
+  hasHomeAwayData,
+  hasOpponentHandData,
+  getSituationalSplitGameCounts,
+} from '../utils/statsCalculator';
 
 interface PlayerDetailModalProps {
   player: Player | null;
   onClose: () => void;
 }
 
-type TabId = 'gamelog' | 'charts' | 'info';
+type TabId = 'gamelog' | 'charts' | 'splits' | 'info';
 
 interface Tab {
   id: TabId;
@@ -22,6 +28,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'gamelog', label: 'Game Log' },
   { id: 'charts', label: 'Charts' },
+  { id: 'splits', label: 'Splits' },
   { id: 'info', label: 'More Info' },
 ];
 
@@ -133,6 +140,12 @@ export function PlayerDetailModal({ player, onClose }: PlayerDetailModalProps) {
               gameLog={gameLog}
               isBatter={isBatter}
               showLeagueAverages={true}
+            />
+          )}
+          {activeTab === 'splits' && (
+            <SplitsTab
+              gameLog={gameLog}
+              isBatter={isBatter}
             />
           )}
           {activeTab === 'info' && (
@@ -299,6 +312,165 @@ function ChartsTab({ gameLog, isBatter, showLeagueAverages }: ChartsTabProps) {
         isBatter={isBatter}
         leagueAverages={showLeagueAverages ? leagueAverages : null}
       />
+    </div>
+  );
+}
+
+// Splits Tab Component
+interface SplitsTabProps {
+  gameLog: GameLogEntry[] | undefined;
+  isBatter: boolean;
+}
+
+function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
+  const type = isBatter ? 'batting' : 'pitching';
+  const splits = calculateAllSituationalSplits(gameLog, type);
+  const gameCounts = getSituationalSplitGameCounts(gameLog);
+  const hasHomeAway = hasHomeAwayData(gameLog);
+  const hasHandedness = hasOpponentHandData(gameLog);
+
+  // Batting stat columns for splits
+  const battingColumns: { key: keyof BattingStats; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
+    { key: 'G', label: 'G' },
+    { key: 'PA', label: 'PA' },
+    { key: 'AVG', label: 'AVG', format: 'decimal3' },
+    { key: 'OBP', label: 'OBP', format: 'decimal3' },
+    { key: 'SLG', label: 'SLG', format: 'decimal3' },
+    { key: 'OPS', label: 'OPS', format: 'decimal3' },
+    { key: 'HR', label: 'HR' },
+    { key: 'BB%', label: 'BB%', format: 'percent' },
+    { key: 'K%', label: 'K%', format: 'percent' },
+    { key: 'wOBA', label: 'wOBA', format: 'decimal3' },
+  ];
+
+  // Pitching stat columns for splits
+  const pitchingColumns: { key: keyof PitchingStats; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
+    { key: 'G', label: 'G' },
+    { key: 'IP', label: 'IP', format: 'decimal2' },
+    { key: 'ERA', label: 'ERA', format: 'decimal2' },
+    { key: 'WHIP', label: 'WHIP', format: 'decimal2' },
+    { key: 'K/9', label: 'K/9', format: 'decimal2' },
+    { key: 'BB/9', label: 'BB/9', format: 'decimal2' },
+    { key: 'K%', label: 'K%', format: 'percent' },
+    { key: 'BB%', label: 'BB%', format: 'percent' },
+    { key: 'FIP', label: 'FIP', format: 'decimal2' },
+  ];
+
+  const columns = isBatter ? battingColumns : pitchingColumns;
+
+  const formatValue = (value: number | undefined, format?: string): string => {
+    if (value === undefined || value === null) return '--';
+    if (format === 'decimal3') return value.toFixed(3).replace(/^0/, '');
+    if (format === 'decimal2') return value.toFixed(2);
+    if (format === 'percent') return (value * 100).toFixed(1) + '%';
+    return String(value);
+  };
+
+  const renderStatsRow = (
+    label: string,
+    stats: BattingStats | PitchingStats | undefined,
+    gameCount: number
+  ) => (
+    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800">
+      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+        {label}
+        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">({gameCount} G)</span>
+      </td>
+      {columns.map((col) => {
+        const value = stats?.[col.key as keyof typeof stats] as number | undefined;
+        return (
+          <td
+            key={col.key}
+            className="px-3 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white"
+          >
+            {formatValue(value, col.format)}
+          </td>
+        );
+      })}
+    </tr>
+  );
+
+  if (!gameLog || gameLog.length === 0) {
+    return (
+      <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+        No game data available for splits
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Home/Away Splits */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          Home / Away Splits
+        </h3>
+        {hasHomeAway ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    Split
+                  </th>
+                  {columns.map((col) => (
+                    <th
+                      key={col.key}
+                      className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {renderStatsRow('Home', splits.home, gameCounts.home)}
+                {renderStatsRow('Away', splits.away, gameCounts.away)}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+            Home/away data not available for this player's games.
+          </p>
+        )}
+      </div>
+
+      {/* vs L/R Splits */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          {isBatter ? 'vs Pitcher Handedness' : 'vs Batter Handedness'}
+        </h3>
+        {hasHandedness ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    Split
+                  </th>
+                  {columns.map((col) => (
+                    <th
+                      key={col.key}
+                      className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {renderStatsRow('vs Left', splits.vsL, gameCounts.vsL)}
+                {renderStatsRow('vs Right', splits.vsR, gameCounts.vsR)}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+            Opponent handedness data not available yet. This feature requires additional data collection.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

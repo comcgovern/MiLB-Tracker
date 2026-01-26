@@ -2,7 +2,7 @@
 // Calculate time-based splits from game logs on demand
 // This ensures splits are always accurate relative to the current date
 
-import type { BattingStats, PitchingStats, GameLogEntry, MiLBLevel } from '../types';
+import type { BattingStats, PitchingStats, GameLogEntry, MiLBLevel, SituationalSplit, SituationalSplitStats } from '../types';
 
 // Level display order (highest to lowest)
 export const LEVEL_ORDER: MiLBLevel[] = ['AAA', 'AA', 'A+', 'A', 'CPX', 'MiLB'];
@@ -373,4 +373,104 @@ export function calculateStatsForLevelAndSplit(
   if (!range) return undefined; // Season splits don't use this
 
   return calculateStatsForLevelAndDateRange(gameLogs, level, range, type);
+}
+
+// ============================================
+// SITUATIONAL SPLITS (Home/Away, vs L/R)
+// ============================================
+
+// Filter game logs by home/away
+export function filterGameLogsByHomeAway(
+  gameLogs: GameLogEntry[],
+  isHome: boolean
+): GameLogEntry[] {
+  return gameLogs.filter(game => game.isHome === isHome);
+}
+
+// Filter game logs by opponent handedness
+export function filterGameLogsByOpponentHand(
+  gameLogs: GameLogEntry[],
+  hand: 'L' | 'R'
+): GameLogEntry[] {
+  return gameLogs.filter(game => game.opponentHand === hand);
+}
+
+// Filter game logs by situational split type
+export function filterGameLogsBySituationalSplit(
+  gameLogs: GameLogEntry[],
+  split: SituationalSplit
+): GameLogEntry[] {
+  switch (split) {
+    case 'home':
+      return filterGameLogsByHomeAway(gameLogs, true);
+    case 'away':
+      return filterGameLogsByHomeAway(gameLogs, false);
+    case 'vsL':
+      return filterGameLogsByOpponentHand(gameLogs, 'L');
+    case 'vsR':
+      return filterGameLogsByOpponentHand(gameLogs, 'R');
+    case 'all':
+    default:
+      return gameLogs;
+  }
+}
+
+// Calculate stats for a situational split
+export function calculateStatsForSituationalSplit(
+  gameLogs: GameLogEntry[] | undefined,
+  split: SituationalSplit,
+  type: 'batting' | 'pitching'
+): BattingStats | PitchingStats | undefined {
+  if (!gameLogs || gameLogs.length === 0) return undefined;
+
+  const filtered = filterGameLogsBySituationalSplit(gameLogs, split);
+  if (filtered.length === 0) return undefined;
+
+  return type === 'batting'
+    ? aggregateBattingStats(filtered)
+    : aggregatePitchingStats(filtered);
+}
+
+// Calculate all situational splits at once
+export function calculateAllSituationalSplits(
+  gameLogs: GameLogEntry[] | undefined,
+  type: 'batting' | 'pitching'
+): SituationalSplitStats {
+  if (!gameLogs || gameLogs.length === 0) return {};
+
+  return {
+    home: calculateStatsForSituationalSplit(gameLogs, 'home', type),
+    away: calculateStatsForSituationalSplit(gameLogs, 'away', type),
+    vsL: calculateStatsForSituationalSplit(gameLogs, 'vsL', type),
+    vsR: calculateStatsForSituationalSplit(gameLogs, 'vsR', type),
+  };
+}
+
+// Check if home/away data is available in game logs
+export function hasHomeAwayData(gameLogs: GameLogEntry[] | undefined): boolean {
+  if (!gameLogs || gameLogs.length === 0) return false;
+  return gameLogs.some(game => game.isHome !== undefined);
+}
+
+// Check if opponent handedness data is available in game logs
+export function hasOpponentHandData(gameLogs: GameLogEntry[] | undefined): boolean {
+  if (!gameLogs || gameLogs.length === 0) return false;
+  return gameLogs.some(game => game.opponentHand !== undefined);
+}
+
+// Get game counts for each situational split
+export function getSituationalSplitGameCounts(
+  gameLogs: GameLogEntry[] | undefined
+): { home: number; away: number; vsL: number; vsR: number; total: number } {
+  if (!gameLogs || gameLogs.length === 0) {
+    return { home: 0, away: 0, vsL: 0, vsR: 0, total: 0 };
+  }
+
+  return {
+    home: gameLogs.filter(g => g.isHome === true).length,
+    away: gameLogs.filter(g => g.isHome === false).length,
+    vsL: gameLogs.filter(g => g.opponentHand === 'L').length,
+    vsR: gameLogs.filter(g => g.opponentHand === 'R').length,
+    total: gameLogs.length,
+  };
 }

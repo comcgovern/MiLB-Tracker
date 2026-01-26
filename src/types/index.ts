@@ -134,7 +134,21 @@ export interface GameLogEntry {
   team?: string;
   isHome?: boolean;
   level?: MiLBLevel;
+  // Opponent handedness for situational splits
+  // For batters: pitcher hand faced (L/R)
+  // For pitchers: batter hand faced (L/R) - may be per-AB aggregated
+  opponentHand?: 'L' | 'R';
   stats: BattingStats | PitchingStats;
+}
+
+// Situational split filter types
+export type SituationalSplit = 'all' | 'home' | 'away' | 'vsL' | 'vsR';
+
+export interface SituationalSplitStats {
+  home?: BattingStats | PitchingStats;
+  away?: BattingStats | PitchingStats;
+  vsL?: BattingStats | PitchingStats;
+  vsR?: BattingStats | PitchingStats;
 }
 
 // Stats by level mapping

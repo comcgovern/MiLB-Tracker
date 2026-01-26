@@ -1,6 +1,6 @@
 // stores/useUIStore.ts
 import { create } from 'zustand';
-import type { Split, Player } from '../types';
+import type { Split, Player, SituationalSplit } from '../types';
 
 interface ConfirmModalState {
   title: string;
@@ -14,6 +14,7 @@ interface ConfirmModalState {
 interface UIStore {
   activeTeamId: string | null;
   activeSplit: Split;
+  activeSituationalSplit: SituationalSplit;  // Home/Away, vs L/R filter
   showDashboard: boolean;  // Whether to show dashboard view
   isAddPlayerModalOpen: boolean;
   isAddTeamModalOpen: boolean;
@@ -25,6 +26,7 @@ interface UIStore {
 
   setActiveTeamId: (teamId: string | null) => void;
   setActiveSplit: (split: Split) => void;
+  setActiveSituationalSplit: (split: SituationalSplit) => void;
   setShowDashboard: (show: boolean) => void;
   goToDashboard: () => void;
   goToTeam: (teamId: string) => void;
@@ -47,6 +49,7 @@ interface UIStore {
 export const useUIStore = create<UIStore>((set) => ({
   activeTeamId: null,
   activeSplit: 'season',
+  activeSituationalSplit: 'all',  // Default to showing all games
   showDashboard: true,  // Start on dashboard by default
   isAddPlayerModalOpen: false,
   isAddTeamModalOpen: false,
@@ -61,6 +64,9 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setActiveSplit: (split) =>
     set({ activeSplit: split }),
+
+  setActiveSituationalSplit: (split) =>
+    set({ activeSituationalSplit: split }),
 
   setShowDashboard: (show) =>
     set({ showDashboard: show }),

@@ -15,6 +15,7 @@ import {
   calculateStatsForLevelAndSplit,
   calculateStatsForLevelAndDateRange,
   getLevelsFromGameLogs,
+  filterGameLogsBySituationalSplit,
   LEVEL_ORDER,
   type PresetSplit,
 } from '../utils/statsCalculator';
@@ -57,7 +58,7 @@ async function fetchLastSeasonStats(currentYear: number): Promise<StatsFile> {
 }
 
 export function StatsTable() {
-  const { activeTeamId, activeSplit, customDateRange, openGameLog, openConfirmModal } = useUIStore();
+  const { activeTeamId, activeSplit, activeSituationalSplit, customDateRange, openGameLog, openConfirmModal } = useUIStore();
   const { removePlayerFromTeam, reorderPlayers, sortPlayers } = useTeamPlayers(activeTeamId);
   const [batterSortOption, setBatterSortOption] = useState<SortOption>('custom');
   const [pitcherSortOption, setPitcherSortOption] = useState<SortOption>('custom');
@@ -268,6 +269,15 @@ export function StatsTable() {
   const batters: PlayerRowWithLevel[] = [];
   const pitchers: PlayerRowWithLevel[] = [];
 
+  // Helper to get filtered game logs with situational split applied
+  const getFilteredGameLogs = (
+    gameLogs: import('../types').GameLogEntry[] | undefined
+  ): import('../types').GameLogEntry[] | undefined => {
+    if (!gameLogs || activeSituationalSplit === 'all') return gameLogs;
+    const filtered = filterGameLogsBySituationalSplit(gameLogs, activeSituationalSplit);
+    return filtered.length > 0 ? filtered : undefined;
+  };
+
   // Helper to get stats by level for a player
   const getStatsByLevel = (
     playerStats: PlayerStatsData | undefined,
@@ -276,7 +286,17 @@ export function StatsTable() {
     if (!playerStats) return { levels: [], statsByLevel: {} };
 
     const byLevel = type === 'batting' ? playerStats.battingByLevel : playerStats.pitchingByLevel;
-    const gameLogs = type === 'batting' ? playerStats.battingGameLog : playerStats.pitchingGameLog;
+    const rawGameLogs = type === 'batting' ? playerStats.battingGameLog : playerStats.pitchingGameLog;
+    const gameLogs = getFilteredGameLogs(rawGameLogs);
+
+    // When a situational split is active, we must use game logs (can't use pre-computed stats)
+    if (activeSituationalSplit !== 'all') {
+      if (gameLogs) {
+        const levels = getLevelsFromGameLogs(gameLogs).filter(l => l !== 'MiLB');
+        return { levels, statsByLevel: {} };
+      }
+      return { levels: [], statsByLevel: {} };
+    }
 
     if (byLevel && Object.keys(byLevel).length > 0) {
       // Use pre-computed level stats for season/lastSeason
@@ -299,8 +319,14 @@ export function StatsTable() {
   ): BattingStats | PitchingStats | undefined => {
     if (!playerStats) return undefined;
 
-    const gameLogs = type === 'batting' ? playerStats.battingGameLog : playerStats.pitchingGameLog;
+    const rawGameLogs = type === 'batting' ? playerStats.battingGameLog : playerStats.pitchingGameLog;
+    const gameLogs = getFilteredGameLogs(rawGameLogs);
     const byLevel = type === 'batting' ? playerStats.battingByLevel : playerStats.pitchingByLevel;
+
+    // When a situational split is active, we must calculate from filtered game logs
+    if (activeSituationalSplit !== 'all') {
+      return calculateStatsForLevelAndSplit(gameLogs, level, 'season' as PresetSplit, type);
+    }
 
     if (activeSplit === 'season' || activeSplit === 'lastSeason') {
       // Use pre-computed level stats
@@ -368,17 +394,21 @@ export function StatsTable() {
 
       // Add a MiLB total row
       let totalStats: BattingStats | PitchingStats | undefined;
-      if (activeSplit === 'season' || activeSplit === 'lastSeason') {
+      const rawTotalGameLogs = statType === 'batting' ? playerStats?.battingGameLog : playerStats?.pitchingGameLog;
+      const totalGameLogs = getFilteredGameLogs(rawTotalGameLogs);
+
+      // When a situational split is active, always calculate from filtered game logs
+      if (activeSituationalSplit !== 'all') {
+        totalStats = calculateStatsForSplit(totalGameLogs, 'season' as PresetSplit, statType);
+      } else if (activeSplit === 'season' || activeSplit === 'lastSeason') {
         totalStats = statType === 'batting' ? playerStats?.batting : playerStats?.pitching;
       } else if (activeSplit === 'custom' && customDateRange) {
         const range = createDateRange(customDateRange.start, customDateRange.end);
-        const gameLogs = statType === 'batting' ? playerStats?.battingGameLog : playerStats?.pitchingGameLog;
         if (range) {
-          totalStats = calculateStatsForDateRange(gameLogs, range, statType);
+          totalStats = calculateStatsForDateRange(totalGameLogs, range, statType);
         }
       } else {
-        const gameLogs = statType === 'batting' ? playerStats?.battingGameLog : playerStats?.pitchingGameLog;
-        totalStats = calculateStatsForSplit(gameLogs, activeSplit as PresetSplit, statType);
+        totalStats = calculateStatsForSplit(totalGameLogs, activeSplit as PresetSplit, statType);
       }
 
       const totalRow: PlayerRowWithLevel = {
@@ -397,29 +427,21 @@ export function StatsTable() {
     } else {
       // Single level or no level info - just one row
       let stats: BattingStats | PitchingStats | undefined;
+      const rawSingleGameLogs = statType === 'batting' ? playerStats?.battingGameLog : playerStats?.pitchingGameLog;
+      const singleGameLogs = getFilteredGameLogs(rawSingleGameLogs);
 
-      if (statType === 'batting') {
-        if (activeSplit === 'season' || activeSplit === 'lastSeason') {
-          stats = playerStats?.batting;
-        } else if (activeSplit === 'custom' && customDateRange) {
-          const range = createDateRange(customDateRange.start, customDateRange.end);
-          if (range) {
-            stats = calculateStatsForDateRange(playerStats?.battingGameLog, range, 'batting');
-          }
-        } else {
-          stats = calculateStatsForSplit(playerStats?.battingGameLog, activeSplit as PresetSplit, 'batting');
+      // When a situational split is active, always calculate from filtered game logs
+      if (activeSituationalSplit !== 'all') {
+        stats = calculateStatsForSplit(singleGameLogs, 'season' as PresetSplit, statType);
+      } else if (activeSplit === 'season' || activeSplit === 'lastSeason') {
+        stats = statType === 'batting' ? playerStats?.batting : playerStats?.pitching;
+      } else if (activeSplit === 'custom' && customDateRange) {
+        const range = createDateRange(customDateRange.start, customDateRange.end);
+        if (range) {
+          stats = calculateStatsForDateRange(singleGameLogs, range, statType);
         }
       } else {
-        if (activeSplit === 'season' || activeSplit === 'lastSeason') {
-          stats = playerStats?.pitching;
-        } else if (activeSplit === 'custom' && customDateRange) {
-          const range = createDateRange(customDateRange.start, customDateRange.end);
-          if (range) {
-            stats = calculateStatsForDateRange(playerStats?.pitchingGameLog, range, 'pitching');
-          }
-        } else {
-          stats = calculateStatsForSplit(playerStats?.pitchingGameLog, activeSplit as PresetSplit, 'pitching');
-        }
+        stats = calculateStatsForSplit(singleGameLogs, activeSplit as PresetSplit, statType);
       }
 
       // For single level, use the player's current level from player info

@@ -17,6 +17,9 @@
 11. ~~Fix type safety issues~~ FIXED: Removed `(player as any).fangraphsId` casts, deleted unused GameLogModal.tsx
 12. ~~Add error handling to database operations~~ FIXED: Added try-catch blocks and TeamOperationResult/TeamPlayerOperationResult types to useTeams.ts and useTeamPlayers.ts
 13. ~~Remove unused code~~ FIXED: Removed `selectedPlayerIds` state and related functions from useUIStore.ts. Note: PlayersRegistry IS used in StatsTable.tsx
+21. ~~Add chart legend showing level colors directly on the chart~~ FIXED: Integrated custom Legend component in PlayerCharts.tsx that shows metric line + level color indicators
+22. ~~Handedness splits - vs Left/Right pitcher/batter~~ FIXED: Added SituationalSplit type, filtering functions in statsCalculator.ts, Splits tab in PlayerDetailModal, and Filter dropdown in Controls
+23. ~~Home/Away splits~~ FIXED: Added home/away filtering using existing isHome field in GameLogEntry, displayed in new Splits tab and available as Filter option
 
 ### Pending
 
@@ -26,13 +29,11 @@
 
 #### Medium Priority
 16. Trend sparklines in stats table - small inline charts showing recent performance
-21. Add chart legend showing level colors directly on the chart (integrated Recharts Legend component)
-
-#### High Priority (Moving up from Phase 2)
-22. Handedness splits - vs Left/Right pitcher (for batters) and vs Left/Right batter (for pitchers) (Spec 2.5)
-23. Home/Away splits (Spec 2.5)
 
 #### Lower Priority (Phase 2+ features from spec)
 17. Player comparison tool (Spec 2.8.1)
 19. Alerts & notifications system (Spec 2.6)
 20. STATCAST SUPPORT
+
+#### Notes
+- Handedness splits (vs L/R) require opponent handedness data (opponentHand field) to be populated in game logs by the data pipeline. UI is ready but will show "data not available" message until this is implemented in the backend.
