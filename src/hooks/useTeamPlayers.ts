@@ -266,11 +266,17 @@ export function useTeamPlayers(teamId?: string | null) {
 
         if (!infoA || !infoB) return 0;
 
+        // Extract last name for sorting (assumes "First Last" format)
+        const getLastName = (name: string) => {
+          const parts = name.trim().split(' ');
+          return parts.length > 1 ? parts[parts.length - 1] : name;
+        };
+
         switch (sortOption) {
           case 'name-asc':
-            return infoA.name.localeCompare(infoB.name);
+            return getLastName(infoA.name).localeCompare(getLastName(infoB.name));
           case 'name-desc':
-            return infoB.name.localeCompare(infoA.name);
+            return getLastName(infoB.name).localeCompare(getLastName(infoA.name));
           case 'level-asc': {
             const levelA = LEVEL_SORT_ORDER[infoA.level] || 999;
             const levelB = LEVEL_SORT_ORDER[infoB.level] || 999;
