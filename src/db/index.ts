@@ -17,6 +17,7 @@ export interface DBTeamPlayer {
   teamId: string;
   playerId: string;
   userNotes?: string;
+  displayOrder: number;
   addedAt: Date;
 }
 
@@ -37,6 +38,19 @@ export class MiLBDatabase extends Dexie {
       teams: '++id, name, isWatchlist, displayOrder',
       teamPlayers: '++id, teamId, playerId, [teamId+playerId]',
       settings: 'key',
+    });
+
+    // Version 2: Add displayOrder to teamPlayers for drag-and-drop reordering
+    this.version(2).stores({
+      teams: '++id, name, isWatchlist, displayOrder',
+      teamPlayers: '++id, teamId, playerId, displayOrder, [teamId+playerId]',
+      settings: 'key',
+    }).upgrade(tx => {
+      // Set displayOrder based on addedAt order for existing entries
+      return tx.table('teamPlayers').toCollection().modify((player, ref) => {
+        // Use timestamp as initial order, will be normalized later
+        ref.value.displayOrder = player.addedAt?.getTime() || Date.now();
+      });
     });
   }
 }

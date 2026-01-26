@@ -35,6 +35,7 @@ export interface TeamPlayer {
   teamId: string;
   playerId: string; // mlbId (or fangraphsId for legacy data)
   userNotes?: string;
+  displayOrder: number;
   addedAt: Date;
 }
 
