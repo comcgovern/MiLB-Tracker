@@ -262,19 +262,29 @@ def format_pitching(stat: dict) -> dict:
     if bf > 0:
         result['K%'] = round(so / bf, 3)
         result['BB%'] = round(bb / bf, 3)
+        # K%-BB% (strikeout rate minus walk rate)
+        result['K%-BB%'] = round((so - bb) / bf, 3)
 
-        babip_denom = bf - so - hr - bb - hbp
+    # Convert IP from baseball notation (5.1 = 5 1/3) to true innings for calculations
+    ip_whole = int(ip)
+    ip_partial = round((ip - ip_whole) * 10)
+    true_ip = ip_whole + ip_partial / 3
+
+    # BABIP for pitchers: (H - HR) / (BIP)
+    # BIP = H - HR + outs on balls in play, where outs on balls in play ≈ 3*IP - SO
+    if true_ip > 0:
+        babip_denom = 3 * true_ip + h - so - hr
         if babip_denom > 0:
             result['BABIP'] = round((h - hr) / babip_denom, 3)
 
-    if ip > 0:
+    if true_ip > 0:
         fip_constant = 3.10
-        result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
+        result['FIP'] = round((13 * hr + 3 * (bb + hbp) - 2 * so) / true_ip + fip_constant, 2)
 
         bip = bf - so - bb - hbp
         if bip > 0:
             expected_hr = bip * 0.035
-            result['xFIP'] = round((13 * expected_hr + 3 * (bb + hbp) - 2 * so) / ip + fip_constant, 2)
+            result['xFIP'] = round((13 * expected_hr + 3 * (bb + hbp) - 2 * so) / true_ip + fip_constant, 2)
 
     return result
 
@@ -431,8 +441,14 @@ def aggregate_pitching_stats(stats_list: list[dict]) -> dict:
     if bf > 0:
         result['K%'] = round(so / bf, 3)
         result['BB%'] = round(bb / bf, 3)
+        # K%-BB% (strikeout rate minus walk rate)
+        result['K%-BB%'] = round((so - bb) / bf, 3)
 
-        babip_denom = bf - so - hr - bb - hbp
+    # BABIP for pitchers: (H - HR) / (BIP)
+    # BIP = H - HR + outs on balls in play, where outs on balls in play ≈ 3*IP - SO
+    if ip > 0:
+        innings = ip_whole + ip_partial / 3
+        babip_denom = 3 * innings + h - so - hr
         if babip_denom > 0:
             result['BABIP'] = round((h - hr) / babip_denom, 3)
 
