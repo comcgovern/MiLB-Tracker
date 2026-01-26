@@ -45,23 +45,29 @@ MILB_LEVELS = {
 SPORT_ID_TO_LEVEL = {v: k for k, v in MILB_LEVELS.items()}
 
 
-def get_player_last_game_dates() -> dict[str, str]:
+def get_player_activity_by_year() -> dict[str, dict]:
     """
-    Scan all stats files to find the most recent game date for each player.
+    Scan all stats files to find activity information for each player.
 
     Returns:
-        Dict mapping player_id -> last_game_date (YYYY-MM-DD format)
+        Dict mapping player_id -> {
+            'last_game_date': str (YYYY-MM-DD),
+            'years_active': set of years with activity,
+            'player_info': basic info from stats if available
+        }
     """
-    last_game_dates = {}
+    player_activity = {}
 
     if not STATS_DIR.exists():
         logger.warning(f"Stats directory not found: {STATS_DIR}")
-        return last_game_dates
+        return player_activity
 
     # Scan all year directories
     for year_dir in STATS_DIR.iterdir():
         if not year_dir.is_dir() or not year_dir.name.isdigit():
             continue
+
+        year = int(year_dir.name)
 
         # Scan all month files in the year
         for month_file in year_dir.glob('[0-9][0-9].json'):
@@ -71,32 +77,130 @@ def get_player_last_game_dates() -> dict[str, str]:
 
                 players = data.get('players', {})
                 for player_id, player_data in players.items():
+                    if player_id not in player_activity:
+                        player_activity[player_id] = {
+                            'last_game_date': None,
+                            'years_active': set(),
+                            'player_info': None,
+                        }
+
+                    player_type = player_data.get('type', 'batter')
+
                     # Check batting game logs
                     for log in player_data.get('battingGameLog', []):
                         game_date = log.get('date', '')
                         if game_date:
-                            if player_id not in last_game_dates or game_date > last_game_dates[player_id]:
-                                last_game_dates[player_id] = game_date
+                            player_activity[player_id]['years_active'].add(year)
+                            if (player_activity[player_id]['last_game_date'] is None or
+                                    game_date > player_activity[player_id]['last_game_date']):
+                                player_activity[player_id]['last_game_date'] = game_date
+                            # Extract player info from game log if not already set
+                            if player_activity[player_id]['player_info'] is None:
+                                player_activity[player_id]['player_info'] = {
+                                    'team': log.get('team', 'Unknown'),
+                                    'level': log.get('level', 'Unknown'),
+                                    'type': player_type,
+                                }
 
                     # Check pitching game logs
                     for log in player_data.get('pitchingGameLog', []):
                         game_date = log.get('date', '')
                         if game_date:
-                            if player_id not in last_game_dates or game_date > last_game_dates[player_id]:
-                                last_game_dates[player_id] = game_date
+                            player_activity[player_id]['years_active'].add(year)
+                            if (player_activity[player_id]['last_game_date'] is None or
+                                    game_date > player_activity[player_id]['last_game_date']):
+                                player_activity[player_id]['last_game_date'] = game_date
+                            # Extract player info from game log if not already set
+                            if player_activity[player_id]['player_info'] is None:
+                                player_activity[player_id]['player_info'] = {
+                                    'team': log.get('team', 'Unknown'),
+                                    'level': log.get('level', 'Unknown'),
+                                    'type': player_type,
+                                }
+
+                    # Also check for explicit info field (legacy support)
+                    if player_activity[player_id]['player_info'] is None:
+                        info = player_data.get('info', {})
+                        if info:
+                            player_activity[player_id]['player_info'] = info
 
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Failed to read {month_file}: {e}")
                 continue
 
-    logger.info(f"Found last game dates for {len(last_game_dates)} players")
-    return last_game_dates
+    logger.info(f"Found activity data for {len(player_activity)} players")
+    return player_activity
+
+
+def get_player_last_game_dates() -> dict[str, str]:
+    """
+    Scan all stats files to find the most recent game date for each player.
+    (Legacy function for backward compatibility)
+
+    Returns:
+        Dict mapping player_id -> last_game_date (YYYY-MM-DD format)
+    """
+    activity = get_player_activity_by_year()
+    return {pid: data['last_game_date'] for pid, data in activity.items()
+            if data['last_game_date'] is not None}
+
+
+def prune_inactive_players_by_season(players: list[dict], player_activity: dict[str, dict],
+                                      current_year: int) -> list[dict]:
+    """
+    Remove players who haven't played in the current or previous season.
+
+    Players are kept if they:
+    - Have activity in the current year OR previous year (from stats files)
+    - Are on a current roster but have no stats yet (new players)
+
+    Args:
+        players: List of player dicts from the index
+        player_activity: Dict mapping player_id -> activity info with years_active
+        current_year: The current year for determining seasons
+
+    Returns:
+        Filtered list of active players
+    """
+    previous_year = current_year - 1
+    valid_years = {current_year, previous_year}
+
+    active_players = []
+    pruned_count = 0
+    no_data_count = 0
+
+    for player in players:
+        player_id = player.get('mlbId', '')
+        activity = player_activity.get(player_id)
+
+        if activity is None:
+            # No game data found - keep the player (they might be new to the system)
+            active_players.append(player)
+            no_data_count += 1
+        else:
+            years_active = activity.get('years_active', set())
+            # Keep if player was active in current or previous year
+            if years_active & valid_years:
+                if activity['last_game_date']:
+                    player['lastGameDate'] = activity['last_game_date']
+                active_players.append(player)
+            else:
+                # Player hasn't played in current or previous season - prune them
+                pruned_count += 1
+                logger.debug(f"Pruning inactive player: {player.get('name')} "
+                           f"(last active years: {sorted(years_active) if years_active else 'none'})")
+
+    logger.info(f"Pruned {pruned_count} inactive players (no activity in {previous_year} or {current_year})")
+    logger.info(f"Kept {len(active_players)} players ({no_data_count} with no game data)")
+
+    return active_players
 
 
 def prune_inactive_players(players: list[dict], last_game_dates: dict[str, str],
                            threshold_days: int = INACTIVE_THRESHOLD_DAYS) -> list[dict]:
     """
     Remove players who haven't played a MiLB game within the threshold period.
+    (Legacy function - prefer prune_inactive_players_by_season)
 
     Args:
         players: List of player dicts from the index
@@ -118,7 +222,6 @@ def prune_inactive_players(players: list[dict], last_game_dates: dict[str, str],
 
         if last_game is None:
             # No game data found - keep the player (they might be new)
-            # But we could also choose to prune these if we wanted stricter filtering
             active_players.append(player)
             no_data_count += 1
         elif last_game >= cutoff_date:
@@ -233,16 +336,37 @@ def load_existing_players() -> set:
     return set()
 
 
+def load_existing_index() -> dict[str, dict]:
+    """Load existing player index to get player names and info.
+
+    Returns:
+        Dict mapping player_id -> player info dict
+    """
+    if INDEX_FILE.exists():
+        try:
+            with open(INDEX_FILE) as f:
+                data = json.load(f)
+                return {p['mlbId']: p for p in data.get('players', [])}
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load existing index: {e}")
+    return {}
+
+
 def build_index(year: int = None, fallback_year: int = None,
                 prune_inactive: bool = True,
                 prune_threshold_days: int = INACTIVE_THRESHOLD_DAYS) -> tuple[list[dict], int]:
     """Build the player index from MLB Stats API data.
 
+    Fetches players from both current and previous year rosters, and includes
+    players from stats files who have activity in current or previous year.
+    This ensures players who moved to MLB 40-man rosters are still included
+    if they played in the minors recently.
+
     Args:
         year: The year to fetch data for. Defaults to current year.
-        fallback_year: Year to fall back to if primary year has no data.
-        prune_inactive: If True, remove players who haven't played in over a year.
-        prune_threshold_days: Number of days of inactivity before pruning.
+        fallback_year: Previous year for including players from last season.
+        prune_inactive: If True, remove players who haven't played in current or last season.
+        prune_threshold_days: Legacy parameter, not used with season-based pruning.
 
     Returns:
         Tuple of (player list, year used)
@@ -258,21 +382,30 @@ def build_index(year: int = None, fallback_year: int = None,
 
     existing_ids = load_existing_players()
 
-    # Try to get MiLB players for the requested year
-    all_players = get_milb_players(mlb, year)
+    # Get player activity from stats files first (needed for both inclusion and pruning)
+    logger.info("Scanning stats files for player activity...")
+    player_activity = get_player_activity_by_year()
 
-    # If no data found, try the fallback year
+    # Fetch players from BOTH current and previous year rosters
+    # This ensures we catch players who were on MiLB rosters in either season
+    logger.info(f"Fetching rosters for {year} and {fallback_year}...")
+
+    all_players = []
+
+    # Try current year first
+    current_year_players = get_milb_players(mlb, year)
+    all_players.extend(current_year_players)
+    logger.info(f"Found {len(current_year_players)} players from {year} rosters")
+
+    # Also fetch previous year to catch players who may have moved to MLB
+    previous_year_players = get_milb_players(mlb, fallback_year)
+    all_players.extend(previous_year_players)
+    logger.info(f"Found {len(previous_year_players)} players from {fallback_year} rosters")
+
     year_used = year
-    if not all_players:
-        logger.warning(f"No data found for {year}, trying {fallback_year}...")
-        all_players = get_milb_players(mlb, fallback_year)
-        year_used = fallback_year
 
-    if not all_players:
-        logger.warning(f"No players found for {year_used}")
-        return [], year_used
-
-    # Deduplicate and build player index
+    # Deduplicate and build player index from roster data
+    # Keep first occurrence (current year takes priority over previous year)
     players = {}
     for p in all_players:
         player_id = p['player_id']
@@ -283,7 +416,7 @@ def build_index(year: int = None, fallback_year: int = None,
         if not name:
             continue
 
-        # Skip if already added (keep first occurrence - typically higher level)
+        # Skip if already added (keep first occurrence - current year or higher level)
         if player_id in players:
             continue
 
@@ -298,14 +431,63 @@ def build_index(year: int = None, fallback_year: int = None,
             'inRegistry': player_id in existing_ids,
         }
 
-    result = list(players.values())
-    logger.info(f"Built index with {len(result)} players for {year_used}")
+    logger.info(f"Built index with {len(players)} players from rosters")
 
-    # Prune inactive players if enabled
+    # Load existing index to get player names for stats-only players
+    existing_index = load_existing_index()
+    logger.info(f"Loaded {len(existing_index)} players from existing index for name lookup")
+
+    # Add players from stats files who have activity in current or previous year
+    # but are not on any roster (e.g., players who moved to MLB 40-man)
+    valid_years = {year, fallback_year}
+    stats_only_count = 0
+    missing_name_count = 0
+
+    for player_id, activity in player_activity.items():
+        if player_id in players:
+            continue  # Already have this player from roster data
+
+        # Check if player was active in current or previous year
+        years_active = activity.get('years_active', set())
+        if not (years_active & valid_years):
+            continue  # No recent activity
+
+        # Get player info from stats files
+        player_info = activity.get('player_info', {})
+
+        # Try to get name from existing index first, then from player_info
+        existing_player = existing_index.get(player_id, {})
+        name = existing_player.get('name', '') or player_info.get('name', '')
+
+        if not name:
+            missing_name_count += 1
+            continue  # Can't add player without a name
+
+        # Prefer data from existing index, fall back to stats data
+        players[player_id] = {
+            'mlbId': player_id,
+            'name': name,
+            'team': player_info.get('team') or existing_player.get('team', 'Unknown'),
+            'org': existing_player.get('org', ''),  # org not in stats, use existing
+            'level': player_info.get('level') or existing_player.get('level', 'Unknown'),
+            'position': existing_player.get('position', 'UTIL'),  # position not in stats
+            'type': player_info.get('type') or existing_player.get('type', 'batter'),
+            'inRegistry': player_id in existing_ids,
+        }
+        stats_only_count += 1
+
+    if stats_only_count > 0:
+        logger.info(f"Added {stats_only_count} players from stats files (not on current rosters)")
+    if missing_name_count > 0:
+        logger.warning(f"Skipped {missing_name_count} players from stats (no name available)")
+
+    result = list(players.values())
+    logger.info(f"Total index size before pruning: {len(result)} players")
+
+    # Prune inactive players using season-based logic
     if prune_inactive:
-        logger.info("Checking for inactive players to prune...")
-        last_game_dates = get_player_last_game_dates()
-        result = prune_inactive_players(result, last_game_dates, prune_threshold_days)
+        logger.info("Checking for inactive players to prune (season-based)...")
+        result = prune_inactive_players_by_season(result, player_activity, year)
 
     return result, year_used
 
