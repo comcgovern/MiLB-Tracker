@@ -1,9 +1,10 @@
 // components/StatsTable.tsx
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
-import { useTeamPlayers } from '../hooks/useTeamPlayers';
+import { useTeamPlayers, type SortOption } from '../hooks/useTeamPlayers';
 import { PlayerStatsTable } from './PlayerStatsTable';
 import type { StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, PlayerStatsData } from '../types';
 import { getPlayerId } from '../types';
@@ -57,7 +58,9 @@ async function fetchLastSeasonStats(currentYear: number): Promise<StatsFile> {
 
 export function StatsTable() {
   const { activeTeamId, activeSplit, customDateRange, openGameLog, openConfirmModal } = useUIStore();
-  const { removePlayerFromTeam } = useTeamPlayers(activeTeamId);
+  const { removePlayerFromTeam, reorderPlayers, sortPlayers } = useTeamPlayers(activeTeamId);
+  const [batterSortOption, setBatterSortOption] = useState<SortOption>('custom');
+  const [pitcherSortOption, setPitcherSortOption] = useState<SortOption>('custom');
 
   // Fetch team players from IndexedDB
   const teamPlayers = useLiveQuery(
@@ -141,6 +144,48 @@ export function StatsTable() {
 
   const handlePlayerClick = (player: Player) => {
     openGameLog(player);
+  };
+
+  // Handle reorder from drag-and-drop
+  const handleReorderPlayers = async (orderedPlayerIds: string[]) => {
+    await reorderPlayers(orderedPlayerIds);
+    // Reset sort options since we're now in custom order
+    setBatterSortOption('custom');
+    setPitcherSortOption('custom');
+  };
+
+  // Build player info map for sorting (name and level)
+  const buildPlayerInfoMap = (
+    rows: { teamPlayer: { playerId: string }; player: { name: string; level?: string } | undefined }[]
+  ): Map<string, { name: string; level: string }> => {
+    const map = new Map<string, { name: string; level: string }>();
+    rows.forEach(({ teamPlayer, player }) => {
+      if (!map.has(teamPlayer.playerId) && player) {
+        map.set(teamPlayer.playerId, {
+          name: player.name,
+          level: player.level || '',
+        });
+      }
+    });
+    return map;
+  };
+
+  // Handle sort option change for batters
+  const handleBatterSort = async (option: SortOption) => {
+    setBatterSortOption(option);
+    if (option !== 'custom') {
+      const playerInfoMap = buildPlayerInfoMap(batters);
+      await sortPlayers(option, playerInfoMap);
+    }
+  };
+
+  // Handle sort option change for pitchers
+  const handlePitcherSort = async (option: SortOption) => {
+    setPitcherSortOption(option);
+    if (option !== 'custom') {
+      const playerInfoMap = buildPlayerInfoMap(pitchers);
+      await sortPlayers(option, playerInfoMap);
+    }
   };
 
   // Helper to determine if a player level has Statcast coverage
@@ -444,6 +489,9 @@ export function StatsTable() {
           players={batters}
           onRemovePlayer={handleRemovePlayer}
           onPlayerClick={handlePlayerClick}
+          onReorderPlayers={handleReorderPlayers}
+          onSortPlayers={handleBatterSort}
+          currentSortOption={batterSortOption}
         />
       )}
 
@@ -454,6 +502,9 @@ export function StatsTable() {
           players={pitchers}
           onRemovePlayer={handleRemovePlayer}
           onPlayerClick={handlePlayerClick}
+          onReorderPlayers={handleReorderPlayers}
+          onSortPlayers={handlePitcherSort}
+          currentSortOption={pitcherSortOption}
         />
       )}
     </div>

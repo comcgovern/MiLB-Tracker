@@ -1,5 +1,5 @@
 // components/PlayerStatsTable.tsx
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { StatCategoryToggle } from './StatCategoryToggle';
 import {
   type StatCategory,
@@ -10,6 +10,7 @@ import {
 } from '../config/statCategories';
 import type { Player, BattingStats, PitchingStats, MiLBLevel } from '../types';
 import type { DBTeamPlayer } from '../db';
+import type { SortOption } from '../hooks/useTeamPlayers';
 
 interface PlayerRow {
   teamPlayer: DBTeamPlayer;
@@ -25,6 +26,9 @@ interface PlayerStatsTableProps {
   players: PlayerRow[];
   onRemovePlayer: (teamPlayerId: string, playerName: string) => void;
   onPlayerClick?: (player: Player) => void;
+  onReorderPlayers?: (orderedTeamPlayerIds: string[]) => void;
+  onSortPlayers?: (sortOption: SortOption) => void;
+  currentSortOption?: SortOption;
 }
 
 export function PlayerStatsTable({
@@ -33,8 +37,14 @@ export function PlayerStatsTable({
   players,
   onRemovePlayer,
   onPlayerClick,
+  onReorderPlayers,
+  onSortPlayers,
+  currentSortOption = 'custom',
 }: PlayerStatsTableProps) {
   const [activeCategory, setActiveCategory] = useState<StatCategory>('standard');
+  const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
+  const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
+  const dragCounter = useRef(0);
 
   // Check if any player in this table has Statcast data
   const anyHasStatcast = players.some((p) => p.player?.hasStatcast);
@@ -45,6 +55,89 @@ export function PlayerStatsTable({
 
   // If Statcast is selected but no one has it, show message
   const showStatcastNA = activeCategory === 'statcast' && !anyHasStatcast;
+
+  // Count unique players (not rows, since multi-level players have multiple rows)
+  const uniquePlayerCount = new Set(players.map(p => p.teamPlayer.id)).size;
+
+  // Get unique player IDs in order (for drag-and-drop)
+  const uniquePlayerIds: string[] = [];
+  players.forEach(p => {
+    if (p.teamPlayer.id && !uniquePlayerIds.includes(p.teamPlayer.id)) {
+      uniquePlayerIds.push(p.teamPlayer.id);
+    }
+  });
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, teamPlayerId: string) => {
+    setDraggedPlayerId(teamPlayerId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', teamPlayerId);
+    // Add a class to the dragged element
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.classList.add('opacity-50');
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggedPlayerId(null);
+    setDragOverPlayerId(null);
+    dragCounter.current = 0;
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.classList.remove('opacity-50');
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent, teamPlayerId: string) => {
+    e.preventDefault();
+    dragCounter.current++;
+    if (teamPlayerId !== draggedPlayerId) {
+      setDragOverPlayerId(teamPlayerId);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setDragOverPlayerId(null);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, targetPlayerId: string) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setDragOverPlayerId(null);
+
+    if (!draggedPlayerId || draggedPlayerId === targetPlayerId) return;
+
+    // Reorder the players
+    const newOrder = [...uniquePlayerIds];
+    const draggedIndex = newOrder.indexOf(draggedPlayerId);
+    const targetIndex = newOrder.indexOf(targetPlayerId);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    // Remove from current position and insert at new position
+    newOrder.splice(draggedIndex, 1);
+    newOrder.splice(targetIndex, 0, draggedPlayerId);
+
+    onReorderPlayers?.(newOrder);
+    setDraggedPlayerId(null);
+  };
+
+  // Sort options
+  const sortOptions: { value: SortOption; label: string }[] = [
+    { value: 'custom', label: 'Custom Order' },
+    { value: 'name-asc', label: 'Name (A-Z)' },
+    { value: 'name-desc', label: 'Name (Z-A)' },
+    { value: 'level-desc', label: 'Level (High-Low)' },
+    { value: 'level-asc', label: 'Level (Low-High)' },
+  ];
 
   if (players.length === 0) {
     return null;
@@ -57,14 +150,31 @@ export function PlayerStatsTable({
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           {title}
           <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-            ({players.length})
+            ({uniquePlayerCount})
           </span>
         </h3>
-        <StatCategoryToggle
-          activeCategory={activeCategory}
-          onCategoryChange={setActiveCategory}
-          hasStatcast={anyHasStatcast}
-        />
+        <div className="flex items-center gap-3">
+          {/* Sort dropdown */}
+          {onSortPlayers && (
+            <select
+              value={currentSortOption}
+              onChange={(e) => onSortPlayers(e.target.value as SortOption)}
+              className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              title="Sort players"
+            >
+              {sortOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <StatCategoryToggle
+            activeCategory={activeCategory}
+            onCategoryChange={setActiveCategory}
+            hasStatcast={anyHasStatcast}
+          />
+        </div>
       </div>
 
       {/* Table with horizontal scroll for stats */}
@@ -73,8 +183,14 @@ export function PlayerStatsTable({
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
               <tr>
+                {/* Drag handle column */}
+                {onReorderPlayers && (
+                  <th className="w-8 px-1 py-3 text-center text-xs font-medium text-gray-400 dark:text-gray-500 sticky left-0 bg-gray-50 dark:bg-gray-800 z-10">
+                    <span className="sr-only">Drag</span>
+                  </th>
+                )}
                 {/* Fixed columns */}
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-gray-50 dark:bg-gray-800 z-10">
+                <th className={`px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap ${onReorderPlayers ? 'sticky left-8' : 'sticky left-0'} bg-gray-50 dark:bg-gray-800 z-10`}>
                   Player
                 </th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -120,18 +236,39 @@ export function PlayerStatsTable({
                 const hasNextRowSamePlayer = index < players.length - 1 && players[index + 1]?.teamPlayer.id === teamPlayer.id;
                 // Display level from row data, or fall back to player.level
                 const displayLevel = level || player?.level || '--';
+                // Check if this row is being dragged over
+                const isDragOver = dragOverPlayerId === teamPlayer.id && isFirstRowForPlayer;
 
                 return (
                   <tr
                     key={`${teamPlayer.id}-${level || 'single'}`}
+                    draggable={onReorderPlayers && isFirstRowForPlayer}
+                    onDragStart={isFirstRowForPlayer ? (e) => handleDragStart(e, teamPlayer.id!) : undefined}
+                    onDragEnd={isFirstRowForPlayer ? handleDragEnd : undefined}
+                    onDragEnter={isFirstRowForPlayer ? (e) => handleDragEnter(e, teamPlayer.id!) : undefined}
+                    onDragLeave={isFirstRowForPlayer ? handleDragLeave : undefined}
+                    onDragOver={isFirstRowForPlayer ? handleDragOver : undefined}
+                    onDrop={isFirstRowForPlayer ? (e) => handleDrop(e, teamPlayer.id!) : undefined}
                     className={`
                       hover:bg-gray-50 dark:hover:bg-gray-800
                       ${isTotal ? 'bg-gray-50 dark:bg-gray-800/50 font-medium' : ''}
                       ${hasNextRowSamePlayer ? 'border-b-0' : ''}
+                      ${isDragOver ? 'bg-primary-50 dark:bg-primary-900/20 border-t-2 border-primary-500' : ''}
+                      ${isFirstRowForPlayer && onReorderPlayers ? 'cursor-grab active:cursor-grabbing' : ''}
                     `}
                   >
+                    {/* Drag handle */}
+                    {onReorderPlayers && (
+                      <td className={`w-8 px-1 py-2 text-center sticky left-0 z-10 ${isTotal ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-900'} ${isDragOver ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}>
+                        {isFirstRowForPlayer && (
+                          <span className="text-gray-400 dark:text-gray-500 select-none" title="Drag to reorder">
+                            ⋮⋮
+                          </span>
+                        )}
+                      </td>
+                    )}
                     {/* Fixed columns */}
-                    <td className={`px-4 py-2 whitespace-nowrap sticky left-0 z-10 ${isTotal ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-900'}`}>
+                    <td className={`px-4 py-2 whitespace-nowrap ${onReorderPlayers ? 'sticky left-8' : 'sticky left-0'} z-10 ${isTotal ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-white dark:bg-gray-900'} ${isDragOver ? 'bg-primary-50 dark:bg-primary-900/20' : ''}`}>
                       {isFirstRowForPlayer ? (
                         <div className="flex items-center gap-2">
                           <button
