@@ -1,4 +1,4 @@
-name: Backfill Historical Stats
+name: Fetch Play-by-Play Data
 
 on:
   workflow_dispatch:
@@ -11,7 +11,8 @@ on:
           - date
           - month
           - year
-        default: 'month'
+          - yesterday
+        default: 'yesterday'
       date:
         description: 'Date to fetch (YYYY-MM-DD) - for date mode'
         required: false
@@ -42,9 +43,9 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
-  backfill:
+  fetch-pbp:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours for full year backfill
+    timeout-minutes: 480  # 8 hours for full year fetch
 
     steps:
       - name: Validate inputs
@@ -73,6 +74,7 @@ jobs:
           echo "Date: $DATE"
           echo "Month: $MONTH"
           echo "Year: $YEAR"
+          echo "Workers: ${{ github.event.inputs.workers }}"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -89,30 +91,40 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Backfill stats (date mode)
+      - name: Fetch PBP (yesterday mode)
+        if: ${{ github.event.inputs.mode == 'yesterday' }}
+        run: |
+          python scripts/fetch_pbp.py \
+            --yesterday \
+            --workers ${{ github.event.inputs.workers }} \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Fetch PBP (date mode)
         if: ${{ github.event.inputs.mode == 'date' }}
         run: |
-          python scripts/fetch_stats_by_date.py \
+          python scripts/fetch_pbp.py \
             --date "${{ github.event.inputs.date }}" \
             --workers ${{ github.event.inputs.workers }} \
             ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
         env:
           PYTHONUNBUFFERED: '1'
 
-      - name: Backfill stats (month mode)
+      - name: Fetch PBP (month mode)
         if: ${{ github.event.inputs.mode == 'month' }}
         run: |
-          python scripts/fetch_stats_by_date.py \
+          python scripts/fetch_pbp.py \
             --month "${{ github.event.inputs.month }}" \
             --workers ${{ github.event.inputs.workers }} \
             ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
         env:
           PYTHONUNBUFFERED: '1'
 
-      - name: Backfill stats (year mode)
+      - name: Fetch PBP (year mode)
         if: ${{ github.event.inputs.mode == 'year' }}
         run: |
-          python scripts/fetch_stats_by_date.py \
+          python scripts/fetch_pbp.py \
             --year ${{ github.event.inputs.year }} \
             --workers ${{ github.event.inputs.workers }} \
             ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
@@ -124,7 +136,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add data/
+          git add data/pbp/
 
           # Only commit if there are changes
           if git diff --staged --quiet; then
@@ -132,14 +144,17 @@ jobs:
           else
             MODE="${{ github.event.inputs.mode }}"
             case "$MODE" in
+              yesterday)
+                COMMIT_MSG="Fetch play-by-play data for yesterday"
+                ;;
               date)
-                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.date }}"
+                COMMIT_MSG="Fetch play-by-play data for ${{ github.event.inputs.date }}"
                 ;;
               month)
-                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.month }}"
+                COMMIT_MSG="Fetch play-by-play data for ${{ github.event.inputs.month }}"
                 ;;
               year)
-                COMMIT_MSG="Backfill stats for ${{ github.event.inputs.year }} season"
+                COMMIT_MSG="Fetch play-by-play data for ${{ github.event.inputs.year }} season"
                 ;;
             esac
             git commit -m "$COMMIT_MSG"
