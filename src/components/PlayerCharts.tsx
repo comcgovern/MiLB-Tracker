@@ -36,7 +36,6 @@ const PITCHER_METRICS: ChartMetric[] = [
   { key: 'WHIP', label: 'WHIP', color: '#10b981', format: (v) => v.toFixed(2) },
   { key: 'K/9', label: 'K/9', color: '#f59e0b', format: (v) => v.toFixed(2) },
   { key: 'K%-BB%', label: 'K% - BB%', color: '#8b5cf6', format: (v) => (v * 100).toFixed(1) + '%' },
-  { key: 'CSW%', label: 'CSW%', color: '#ec4899', format: (v) => (v * 100).toFixed(1) + '%' },
 ];
 
 // Rolling window sizes
@@ -331,10 +330,8 @@ function calculateRollingValue(
         BB: acc.BB + (stats?.BB ?? 0),
         SO: acc.SO + (stats?.SO ?? 0),
         BF: acc.BF + bf,
-        CSW: acc.CSW + ((stats as PitchingStats & { CSW?: number })?.CSW ?? 0),
-        pitches: acc.pitches + ((stats as PitchingStats & { pitches?: number })?.pitches ?? 0),
       };
-    }, { IP: 0, ER: 0, H: 0, BB: 0, SO: 0, BF: 0, CSW: 0, pitches: 0 });
+    }, { IP: 0, ER: 0, H: 0, BB: 0, SO: 0, BF: 0 });
 
     if (metric === 'ERA' && totals.IP > 0) {
       return (9 * totals.ER) / totals.IP;
@@ -349,15 +346,6 @@ function calculateRollingValue(
       const kPct = totals.SO / totals.BF;
       const bbPct = totals.BB / totals.BF;
       return kPct - bbPct;
-    }
-    if (metric === 'CSW%') {
-      // CSW% requires pitch-level data. If we have it aggregated, use it
-      // Otherwise, estimate from available stats or return 0
-      if (totals.pitches > 0 && totals.CSW > 0) {
-        return totals.CSW / totals.pitches;
-      }
-      // If no pitch data available, return null/0
-      return 0;
     }
   }
 

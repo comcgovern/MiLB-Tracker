@@ -177,16 +177,23 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
   // Always count games
   totals.G = games.length;
 
-  // Sum IP (handles fractional innings)
-  let ipTotal = 0;
+  // Sum IP (handles baseball notation where .1 = 1/3, .2 = 2/3 innings)
+  // Convert to total outs, then back to IP notation
+  let totalOuts = 0;
   for (const game of games) {
-    const ip = (game.stats as PitchingStats)?.IP;
-    if (typeof ip === 'number') ipTotal += ip;
+    const gameIP = (game.stats as PitchingStats)?.IP;
+    if (typeof gameIP === 'number') {
+      const whole = Math.floor(gameIP);
+      const partial = Math.round((gameIP - whole) * 10);
+      totalOuts += whole * 3 + partial;
+    }
   }
-  totals.IP = Math.round(ipTotal * 10) / 10;
+  const ipWhole = Math.floor(totalOuts / 3);
+  const ipPartial = totalOuts % 3;
+  totals.IP = Math.round((ipWhole + ipPartial / 10) * 10) / 10;
 
-  // Calculate rate stats
-  const ip = totals.IP || 0;
+  // Calculate rate stats using true IP (in decimal innings for calculations)
+  const ip = ipWhole + ipPartial / 3;
   const er = totals.ER || 0;
   const h = totals.H || 0;
   const bb = totals.BB || 0;
@@ -210,21 +217,6 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
     totals['BB%'] = Math.round((bb / bf) * 1000) / 1000;
     // K%-BB% (strikeout rate minus walk rate)
     totals['K%-BB%'] = Math.round(((so - bb) / bf) * 1000) / 1000;
-  }
-
-  // CSW% (Called Strike + Whiff percentage) requires pitch-level data
-  // Sum up CSW and total pitches from games that have this data
-  let totalCSW = 0;
-  let totalPitches = 0;
-  for (const game of games) {
-    const stats = game.stats as PitchingStats & { CSW?: number; pitches?: number };
-    if (typeof stats?.CSW === 'number' && typeof stats?.pitches === 'number' && stats.pitches > 0) {
-      totalCSW += stats.CSW;
-      totalPitches += stats.pitches;
-    }
-  }
-  if (totalPitches > 0) {
-    totals['CSW%'] = Math.round((totalCSW / totalPitches) * 1000) / 1000;
   }
 
   // BABIP for pitchers uses same formula as batters: (H - HR) / (AB - K - HR + SF)

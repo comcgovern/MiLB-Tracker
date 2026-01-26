@@ -253,8 +253,15 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
   if (bf > 0) {
     totals['K%'] = Math.round((so / bf) * 1000) / 1000;
     totals['BB%'] = Math.round((bb / bf) * 1000) / 1000;
+    // K%-BB% (strikeout rate minus walk rate)
+    totals['K%-BB%'] = Math.round(((so - bb) / bf) * 1000) / 1000;
+  }
 
-    const babipDenom = bf - so - hr - bb - hbp;
+  // BABIP for pitchers: (H - HR) / (BIP) where BIP = H - HR + outs on balls in play
+  // Outs on balls in play ≈ total outs - SO = 3*IP - SO
+  // So BABIP = (H - HR) / (H - HR + 3*IP - SO) = (H - HR) / (3*IP + H - SO - HR)
+  if (ip > 0) {
+    const babipDenom = 3 * ip + h - so - hr;
     if (babipDenom > 0) {
       totals.BABIP = Math.round(((h - hr) / babipDenom) * 1000) / 1000;
     }
