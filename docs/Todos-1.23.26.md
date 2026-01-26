@@ -26,9 +26,13 @@
 
 #### Medium Priority
 16. Trend sparklines in stats table - small inline charts showing recent performance
+21. Add chart legend showing level colors directly on the chart (integrated Recharts Legend component)
+
+#### High Priority (Moving up from Phase 2)
+22. Handedness splits - vs Left/Right pitcher (for batters) and vs Left/Right batter (for pitchers) (Spec 2.5)
+23. Home/Away splits (Spec 2.5)
 
 #### Lower Priority (Phase 2+ features from spec)
 17. Player comparison tool (Spec 2.8.1)
-18. Additional splits: vs Left/Right, Home/Away (Spec 2.5)
 19. Alerts & notifications system (Spec 2.6)
 20. STATCAST SUPPORT
