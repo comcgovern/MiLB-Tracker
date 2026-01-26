@@ -1,6 +1,6 @@
 // components/Controls.tsx
 import { useUIStore } from '../stores/useUIStore';
-import type { Split } from '../types';
+import type { Split, SituationalSplit } from '../types';
 
 const SPLIT_OPTIONS: { value: Split; label: string }[] = [
   { value: 'yesterday', label: 'Yesterday' },
@@ -13,8 +13,24 @@ const SPLIT_OPTIONS: { value: Split; label: string }[] = [
   { value: 'custom', label: 'Custom Range' },
 ];
 
+const SITUATIONAL_SPLIT_OPTIONS: { value: SituationalSplit; label: string }[] = [
+  { value: 'all', label: 'All Games' },
+  { value: 'home', label: 'Home' },
+  { value: 'away', label: 'Away' },
+  { value: 'vsL', label: 'vs LHP/LHB' },
+  { value: 'vsR', label: 'vs RHP/RHB' },
+];
+
 export function Controls() {
-  const { activeSplit, setActiveSplit, openAddPlayerModal, openDateRangeModal, customDateRange } = useUIStore();
+  const {
+    activeSplit,
+    setActiveSplit,
+    activeSituationalSplit,
+    setActiveSituationalSplit,
+    openAddPlayerModal,
+    openDateRangeModal,
+    customDateRange
+  } = useUIStore();
 
   const handleSplitChange = (split: Split) => {
     if (split === 'custom' && !customDateRange) {
@@ -53,6 +69,24 @@ export function Controls() {
               Custom: {customDateRange.start} to {customDateRange.end}
             </div>
           )}
+
+          {/* Situational split selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Filter:
+            </label>
+            <select
+              value={activeSituationalSplit}
+              onChange={(e) => setActiveSituationalSplit(e.target.value as SituationalSplit)}
+              className="input"
+            >
+              {SITUATIONAL_SPLIT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Add player button */}
