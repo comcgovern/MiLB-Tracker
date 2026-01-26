@@ -5,6 +5,7 @@ import type { Player, GameLogEntry } from '../types';
 import { formatStatValue } from '../config/statCategories';
 import { fetchCurrentSeasonStats } from '../utils/statsService';
 import { PlayerCharts } from './PlayerCharts';
+import { useLeagueAverages } from '../hooks/useLeagueAverages';
 
 interface PlayerDetailModalProps {
   player: Player | null;
@@ -131,6 +132,7 @@ export function PlayerDetailModal({ player, onClose }: PlayerDetailModalProps) {
             <ChartsTab
               gameLog={gameLog}
               isBatter={isBatter}
+              showLeagueAverages={true}
             />
           )}
           {activeTab === 'info' && (
@@ -276,9 +278,12 @@ function GameLogTab({ isLoading, isError, gameLog, isBatter }: GameLogTabProps) 
 interface ChartsTabProps {
   gameLog: GameLogEntry[] | undefined;
   isBatter: boolean;
+  showLeagueAverages?: boolean;
 }
 
-function ChartsTab({ gameLog, isBatter }: ChartsTabProps) {
+function ChartsTab({ gameLog, isBatter, showLeagueAverages }: ChartsTabProps) {
+  const { leagueAverages } = useLeagueAverages();
+
   if (!gameLog || gameLog.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500 dark:text-gray-400">
@@ -289,7 +294,11 @@ function ChartsTab({ gameLog, isBatter }: ChartsTabProps) {
 
   return (
     <div className="p-6">
-      <PlayerCharts gameLog={gameLog} isBatter={isBatter} />
+      <PlayerCharts
+        gameLog={gameLog}
+        isBatter={isBatter}
+        leagueAverages={showLeagueAverages ? leagueAverages : null}
+      />
     </div>
   );
 }

@@ -9,12 +9,15 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
-import type { GameLogEntry, BattingStats, PitchingStats } from '../types';
+import type { GameLogEntry, BattingStats, PitchingStats, MiLBLevel } from '../types';
+import { LEVEL_COLORS, LEVEL_LABELS, type LeagueAveragesByLevel } from '../utils/leagueAveragesCalculator';
 
 interface PlayerChartsProps {
   gameLog: GameLogEntry[];
   isBatter: boolean;
+  leagueAverages?: LeagueAveragesByLevel | null;
 }
 
 type ChartMetric = {
@@ -42,37 +45,58 @@ const PITCHER_METRICS: ChartMetric[] = [
 const BATTER_ROLLING_PA = 100;  // Rolling 100 PAs for batters
 const PITCHER_ROLLING_IP = 18;   // Rolling 18 IP for pitchers
 
-export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
+export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerChartsProps) {
   const metrics = isBatter ? BATTER_METRICS : PITCHER_METRICS;
   const [selectedMetric, setSelectedMetric] = useState<string>(metrics[0].key);
   const [viewMode, setViewMode] = useState<'game' | 'rolling'>('rolling');
+  const [showLevelIndicators, setShowLevelIndicators] = useState(true);
 
   const selectedMetricConfig = metrics.find(m => m.key === selectedMetric) || metrics[0];
 
-  // Process game log data for charts
-  const chartData = useMemo(() => {
-    if (!gameLog || gameLog.length === 0) return [];
+  // Process game log data for charts, including level information
+  const { chartData, levelChanges, levelsInData } = useMemo(() => {
+    if (!gameLog || gameLog.length === 0) return { chartData: [], levelChanges: [], levelsInData: [] as MiLBLevel[] };
 
     // Sort games by date
     const sortedGames = [...gameLog].sort((a, b) =>
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
 
-    if (viewMode === 'game') {
-      // Per-game view
-      return sortedGames.map((game, index) => {
+    // Track level changes
+    const changes: { gameNum: number; date: string; fromLevel: MiLBLevel | null; toLevel: MiLBLevel }[] = [];
+    const levelsSet = new Set<MiLBLevel>();
+    let previousLevel: MiLBLevel | null = null;
+
+    const data = sortedGames.map((game, index) => {
+      const currentLevel = game.level as MiLBLevel | undefined;
+
+      // Track unique levels
+      if (currentLevel) {
+        levelsSet.add(currentLevel);
+      }
+
+      // Detect level change
+      if (currentLevel && currentLevel !== previousLevel) {
+        changes.push({
+          gameNum: index + 1,
+          date: formatChartDate(game.date),
+          fromLevel: previousLevel,
+          toLevel: currentLevel,
+        });
+        previousLevel = currentLevel;
+      }
+
+      if (viewMode === 'game') {
         const stats = game.stats as BattingStats | PitchingStats;
         return {
           name: formatChartDate(game.date),
           gameNum: index + 1,
           value: stats?.[selectedMetric as keyof typeof stats] ?? 0,
           opponent: game.opponent,
+          level: currentLevel,
         };
-      });
-    } else {
-      // Rolling average view based on PA (batters) or IP (pitchers)
-      return sortedGames.map((game, index) => {
-        // Get window of games that meets our threshold
+      } else {
+        // Rolling average view based on PA (batters) or IP (pitchers)
         const windowGames = getWindowGames(sortedGames, index, isBatter);
         const rollingValue = calculateRollingValue(windowGames, selectedMetric, isBatter);
 
@@ -81,10 +105,91 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
           gameNum: index + 1,
           value: rollingValue,
           games: windowGames.length,
+          level: currentLevel,
         };
-      });
-    }
+      }
+    });
+
+    return {
+      chartData: data,
+      levelChanges: changes,
+      levelsInData: Array.from(levelsSet) as MiLBLevel[]
+    };
   }, [gameLog, selectedMetric, viewMode, isBatter]);
+
+  // Calculate league average segments for the dynamic horizontal line
+  const leagueAverageSegments = useMemo(() => {
+    if (!leagueAverages || !showLevelIndicators || chartData.length === 0) return [];
+
+    const segments: { startIndex: number; endIndex: number; level: MiLBLevel; avgValue: number }[] = [];
+    let currentLevel: MiLBLevel | null = null;
+    let segmentStart = 0;
+
+    const getAvgValue = (level: MiLBLevel): number | undefined => {
+      const levelAvgs = leagueAverages[level];
+      if (!levelAvgs) return undefined;
+      const avgStats = isBatter ? levelAvgs.batting : levelAvgs.pitching;
+      if (!avgStats) return undefined;
+      return avgStats[selectedMetric as keyof typeof avgStats] as number | undefined;
+    };
+
+    chartData.forEach((point, index) => {
+      const pointLevel = point.level as MiLBLevel | undefined;
+
+      if (pointLevel && pointLevel !== currentLevel) {
+        // End previous segment
+        if (currentLevel) {
+          const avgValue = getAvgValue(currentLevel);
+          if (avgValue !== undefined) {
+            segments.push({
+              startIndex: segmentStart,
+              endIndex: index - 1,
+              level: currentLevel,
+              avgValue,
+            });
+          }
+        }
+        // Start new segment
+        currentLevel = pointLevel;
+        segmentStart = index;
+      }
+    });
+
+    // Don't forget the last segment
+    if (currentLevel) {
+      const avgValue = getAvgValue(currentLevel);
+      if (avgValue !== undefined) {
+        segments.push({
+          startIndex: segmentStart,
+          endIndex: chartData.length - 1,
+          level: currentLevel,
+          avgValue,
+        });
+      }
+    }
+
+    return segments;
+  }, [leagueAverages, showLevelIndicators, chartData, selectedMetric, isBatter]);
+
+  // Get current level's league average for display
+  const currentLevelAverage = useMemo(() => {
+    if (!leagueAverages || chartData.length === 0) return null;
+
+    // Use the last data point's level
+    const lastPoint = chartData[chartData.length - 1];
+    const level = lastPoint?.level as MiLBLevel | undefined;
+    if (!level) return null;
+
+    const levelAvgs = leagueAverages[level];
+    if (!levelAvgs) return null;
+
+    const avgStats = isBatter ? levelAvgs.batting : levelAvgs.pitching;
+    if (!avgStats) return null;
+
+    const avgValue = avgStats[selectedMetric as keyof typeof avgStats] as number | undefined;
+
+    return avgValue !== undefined ? { level, value: avgValue } : null;
+  }, [leagueAverages, chartData, selectedMetric, isBatter]);
 
   // Calculate season trend line
   const trendData = useMemo(() => {
@@ -130,44 +235,69 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            View:
-          </label>
-          <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
-            <button
-              onClick={() => setViewMode('rolling')}
-              className={`px-3 py-1 text-sm ${
-                viewMode === 'rolling'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              Rolling Avg
-            </button>
-            <button
-              onClick={() => setViewMode('game')}
-              className={`px-3 py-1 text-sm ${
-                viewMode === 'game'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              Per Game
-            </button>
+        <div className="flex items-center gap-4">
+          {/* Level indicators toggle */}
+          {leagueAverages && levelsInData.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showLevelIndicators}
+                onChange={(e) => setShowLevelIndicators(e.target.checked)}
+                className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                Level Indicators
+              </span>
+            </label>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              View:
+            </label>
+            <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+              <button
+                onClick={() => setViewMode('rolling')}
+                className={`px-3 py-1 text-sm ${
+                  viewMode === 'rolling'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                Rolling Avg
+              </button>
+              <button
+                onClick={() => setViewMode('game')}
+                className={`px-3 py-1 text-sm ${
+                  viewMode === 'game'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                Per Game
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
-          {selectedMetricConfig.label} {viewMode === 'rolling' ? (isBatter ? `(Last ${BATTER_ROLLING_PA} PA)` : `(Last ${PITCHER_ROLLING_IP} IP)`) : '(Per Game)'}
-        </h4>
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {selectedMetricConfig.label} {viewMode === 'rolling' ? (isBatter ? `(Last ${BATTER_ROLLING_PA} PA)` : `(Last ${PITCHER_ROLLING_IP} IP)`) : '(Per Game)'}
+          </h4>
+          {/* Show current league average */}
+          {showLevelIndicators && currentLevelAverage && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {currentLevelAverage.level} Lg Avg: {formatTooltipValue(currentLevelAverage.value)}
+            </span>
+          )}
+        </div>
 
         {chartData.length > 0 ? (
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
               <XAxis
                 dataKey="name"
@@ -188,10 +318,60 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
                   borderRadius: '0.5rem',
                   color: '#f9fafb',
                 }}
-                formatter={(value: number) => [formatTooltipValue(value), selectedMetricConfig.label]}
+                formatter={(value: number, _name: string, props: any) => {
+                  const level = props?.payload?.level;
+                  const levelStr = level ? ` (${level})` : '';
+                  return [formatTooltipValue(value) + levelStr, selectedMetricConfig.label];
+                }}
                 labelStyle={{ color: '#9ca3af' }}
               />
               <Legend />
+
+              {/* Vertical lines for level changes */}
+              {showLevelIndicators && levelChanges.map((change, index) => (
+                <ReferenceLine
+                  key={`level-change-${index}`}
+                  x={change.date}
+                  stroke={LEVEL_COLORS[change.toLevel]}
+                  strokeDasharray="5 5"
+                  strokeWidth={2}
+                  label={{
+                    value: `${LEVEL_LABELS[change.toLevel]}`,
+                    position: 'top',
+                    fill: LEVEL_COLORS[change.toLevel],
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                  }}
+                />
+              ))}
+
+              {/* Horizontal lines for league averages - one per level segment */}
+              {showLevelIndicators && leagueAverageSegments.map((segment, index) => (
+                <ReferenceLine
+                  key={`avg-${index}`}
+                  y={segment.avgValue}
+                  stroke={LEVEL_COLORS[segment.level]}
+                  strokeDasharray="3 3"
+                  strokeWidth={1}
+                  strokeOpacity={0.7}
+                  segment={[
+                    { x: chartData[segment.startIndex]?.name, y: segment.avgValue },
+                    { x: chartData[segment.endIndex]?.name, y: segment.avgValue },
+                  ]}
+                  ifOverflow="extendDomain"
+                  label={
+                    segment.endIndex === chartData.length - 1
+                      ? {
+                          value: `${LEVEL_LABELS[segment.level]} Avg`,
+                          position: 'right',
+                          fill: LEVEL_COLORS[segment.level],
+                          fontSize: 10,
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+
               <Line
                 type="monotone"
                 dataKey="value"
@@ -209,6 +389,25 @@ export function PlayerCharts({ gameLog, isBatter }: PlayerChartsProps) {
           </div>
         )}
       </div>
+
+      {/* Level Legend */}
+      {showLevelIndicators && levelsInData.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <span className="text-gray-600 dark:text-gray-400">Levels:</span>
+          {levelsInData.map((level) => (
+            <div key={level} className="flex items-center gap-1">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: LEVEL_COLORS[level] }}
+              />
+              <span className="text-gray-700 dark:text-gray-300">{LEVEL_LABELS[level]}</span>
+            </div>
+          ))}
+          <span className="text-gray-500 dark:text-gray-500 ml-2">
+            (Vertical lines = level changes, Horizontal dashed = league avg)
+          </span>
+        </div>
+      )}
 
       {/* Trend indicator */}
       {trendData && chartData.length >= 5 && (
