@@ -219,21 +219,6 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
     totals['K%-BB%'] = Math.round(((so - bb) / bf) * 1000) / 1000;
   }
 
-  // CSW% (Called Strike + Whiff percentage) requires pitch-level data
-  // Sum up CSW and total pitches from games that have this data
-  let totalCSW = 0;
-  let totalPitches = 0;
-  for (const game of games) {
-    const stats = game.stats as PitchingStats & { CSW?: number; pitches?: number };
-    if (typeof stats?.CSW === 'number' && typeof stats?.pitches === 'number' && stats.pitches > 0) {
-      totalCSW += stats.CSW;
-      totalPitches += stats.pitches;
-    }
-  }
-  if (totalPitches > 0) {
-    totals['CSW%'] = Math.round((totalCSW / totalPitches) * 1000) / 1000;
-  }
-
   // BABIP for pitchers uses same formula as batters: (H - HR) / (AB - K - HR + SF)
   // Since we don't have AB or SF for pitchers, we estimate:
   // AB ≈ 3 * IP + H (outs per inning + hits)

@@ -81,7 +81,6 @@ export const PITCHING_STATS: Record<StatCategory, StatColumn[]> = {
     { key: 'FIP', label: 'FIP', format: 'decimal2' },
     { key: 'xFIP', label: 'xFIP', format: 'decimal2' },
     { key: 'BABIP', label: 'BABIP', format: 'decimal3' },
-    { key: 'CSW%', label: 'CSW%', format: 'percent' },
   ],
   statcast: [
     { key: 'IP', label: 'IP', format: 'decimal1' },
