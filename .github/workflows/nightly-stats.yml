@@ -47,6 +47,25 @@ jobs:
         env:
           PYTHONUNBUFFERED: '1'
 
+      - name: Fetch previous day's play-by-play data
+        run: |
+          # Fetch play-by-play data for advanced stats calculation
+          python scripts/fetch_pbp.py \
+            --yesterday \
+            --workers 100 \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Calculate advanced stats from PBP
+        run: |
+          # Calculate GB%, FB%, LD%, Swing%, Contact%, CSW%, splits
+          python scripts/calculate_advanced_stats.py \
+            --yesterday \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
@@ -59,7 +78,7 @@ jobs:
             echo "No changes to commit"
           else
             YESTERDAY=$(date -u -d "yesterday" +%Y-%m-%d)
-            git commit -m "Update stats ${YESTERDAY}"
+            git commit -m "Fetch play-by-play data for ${YESTERDAY}"
             git push
           fi
 
