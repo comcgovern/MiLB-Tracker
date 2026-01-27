@@ -190,10 +190,10 @@ export function StatsTable() {
   };
 
   // Helper to determine if a player level has Statcast coverage
-  // AAA has full Statcast coverage since 2023
-  // Some Single-A (FSL) games also have coverage
-  const levelHasStatcast = (level: string | undefined): boolean => {
-    return level === 'AAA';
+  // We now calculate batted ball stats (GB%, FB%, LD%, etc.) from PBP for all levels
+  // True Statcast metrics (EV, LA, Barrel%) are only available at AAA
+  const levelHasStatcast = (_level: string | undefined): boolean => {
+    return true; // Enable for all levels - batted ball stats available from PBP
   };
 
   // Helper to find player info from registry or index

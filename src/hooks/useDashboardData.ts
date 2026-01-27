@@ -120,7 +120,7 @@ export function useDashboardData() {
         org: indexPlayer.org,
         level: indexPlayer.level as Player['level'],
         position: indexPlayer.position,
-        hasStatcast: indexPlayer.level === 'AAA',
+        hasStatcast: true, // Batted ball stats available from PBP for all levels
       };
 
       const teamName = playerTeamMap.get(playerId) || 'Unknown Team';
