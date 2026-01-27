@@ -116,8 +116,11 @@ def get_games_for_date(client: APIClient, date: str) -> list[dict]:
         for game in date_entry.get('games', []):
             # Only include completed games
             status = game.get('status', {}).get('abstractGameState', '')
+            game_pk = game.get('gamePk')
             if status == 'Final':
                 games.append(game)
+            else:
+                logger.debug(f"Skipping game {game_pk} with status: {status}")
 
     return games
 
@@ -142,7 +145,10 @@ def get_level_from_game(game: dict) -> str:
 
 def fetch_play_by_play(client: APIClient, game_pk: int) -> Optional[dict]:
     """Fetch play-by-play data for a single game."""
-    return client.get(f'/game/{game_pk}/playByPlay')
+    data = client.get(f'/game/{game_pk}/playByPlay')
+    if not data:
+        logger.debug(f"No play-by-play data returned for game {game_pk}")
+    return data
 
 
 def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
@@ -161,6 +167,8 @@ def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
         return at_bats
 
     all_plays = pbp_data.get('allPlays', [])
+    if not all_plays:
+        logger.debug(f"No plays found in PBP data for game {game_info.get('gamePk')}")
 
     for play in all_plays:
         # Skip non-at-bat plays
@@ -207,6 +215,9 @@ def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
 
         at_bats.append(at_bat)
 
+    if not at_bats and all_plays:
+        logger.debug(f"Found {len(all_plays)} plays but 0 at-bats for game {game_info.get('gamePk')}")
+
     return at_bats
 
 
@@ -214,15 +225,21 @@ def process_game(game: dict, client: APIClient) -> Optional[dict]:
     """Process a single game and return its play-by-play data."""
     game_pk = game.get('gamePk')
     if not game_pk:
+        logger.debug(f"Game missing gamePk field")
         return None
 
     pbp_data = fetch_play_by_play(client, game_pk)
     if not pbp_data:
+        logger.debug(f"Game {game_pk}: No play-by-play data available")
         return None
+
+    # Log the structure of returned data for debugging
+    logger.debug(f"Game {game_pk}: PBP data keys: {list(pbp_data.keys())}")
 
     at_bats = extract_at_bats(pbp_data, game)
 
     if not at_bats:
+        logger.debug(f"Game {game_pk}: No at-bats extracted from play-by-play data")
         return None
 
     # Build game record
@@ -294,6 +311,12 @@ def fetch_date(date_str: str, max_workers: int = 200) -> dict:
                 failed += 1
 
     logger.info(f"Processed {len(game_records)} games, {failed} failed")
+
+    # If we found games but processed none, provide helpful message
+    if len(games) > 0 and len(game_records) == 0:
+        logger.warning(f"Found {len(games)} completed games but processed 0. "
+                      f"This usually means play-by-play data is not available. "
+                      f"Try running with --debug for more details.")
 
     return {
         'date': date_str,
