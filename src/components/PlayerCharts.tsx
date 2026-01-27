@@ -25,6 +25,7 @@ type ChartMetric = {
   label: string;
   color: string;
   format?: (value: number) => string;
+  requiresPBP?: boolean;  // Stats derived from play-by-play data (not available per-game)
 };
 
 const BATTER_METRICS: ChartMetric[] = [
@@ -32,6 +33,13 @@ const BATTER_METRICS: ChartMetric[] = [
   { key: 'OPS', label: 'OPS', color: '#10b981', format: (v) => v.toFixed(3) },
   { key: 'wOBA', label: 'wOBA', color: '#f59e0b', format: (v) => v.toFixed(3) },
   { key: 'SLG', label: 'Slugging', color: '#ef4444', format: (v) => v.toFixed(3) },
+  { key: 'K%', label: 'K%', color: '#dc2626', format: (v) => (v * 100).toFixed(1) + '%' },
+  { key: 'BB%', label: 'BB%', color: '#16a34a', format: (v) => (v * 100).toFixed(1) + '%' },
+  { key: 'Swing%', label: 'Swing%', color: '#7c3aed', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'Contact%', label: 'Contact%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'Pull-Air%', label: 'Pull-Air%', color: '#be185d', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
 ];
 
 const PITCHER_METRICS: ChartMetric[] = [
@@ -39,6 +47,12 @@ const PITCHER_METRICS: ChartMetric[] = [
   { key: 'WHIP', label: 'WHIP', color: '#10b981', format: (v) => v.toFixed(2) },
   { key: 'K/9', label: 'K/9', color: '#f59e0b', format: (v) => v.toFixed(2) },
   { key: 'K%-BB%', label: 'K% - BB%', color: '#8b5cf6', format: (v) => (v * 100).toFixed(1) + '%' },
+  { key: 'K%', label: 'K%', color: '#dc2626', format: (v) => (v * 100).toFixed(1) + '%' },
+  { key: 'BB%', label: 'BB%', color: '#16a34a', format: (v) => (v * 100).toFixed(1) + '%' },
+  { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'CSW%', label: 'CSW%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
+  { key: 'Whiff%', label: 'Whiff%', color: '#be185d', format: (v) => (v * 100).toFixed(1) + '%', requiresPBP: true },
 ];
 
 // Rolling window sizes
@@ -284,9 +298,16 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
       {/* Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-lg p-4">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {selectedMetricConfig.label} {viewMode === 'rolling' ? (isBatter ? `(Last ${BATTER_ROLLING_PA} PA)` : `(Last ${PITCHER_ROLLING_IP} IP)`) : '(Per Game)'}
-          </h4>
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {selectedMetricConfig.label} {viewMode === 'rolling' ? (isBatter ? `(Last ${BATTER_ROLLING_PA} PA)` : `(Last ${PITCHER_ROLLING_IP} IP)`) : '(Per Game)'}
+            </h4>
+            {selectedMetricConfig.requiresPBP && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                PBP-derived stat - per-game data not available
+              </p>
+            )}
+          </div>
           {/* Show current league average */}
           {showLevelIndicators && currentLevelAverage && (
             <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -507,12 +528,13 @@ function calculateRollingValue(
         BB: acc.BB + (stats?.BB ?? 0),
         HBP: acc.HBP + (stats?.HBP ?? 0),
         SF: acc.SF + (stats?.SF ?? 0),
+        SO: acc.SO + (stats?.SO ?? 0),
         '2B': acc['2B'] + (stats?.['2B'] ?? 0),
         '3B': acc['3B'] + (stats?.['3B'] ?? 0),
         HR: acc.HR + (stats?.HR ?? 0),
         PA: acc.PA + (stats?.PA ?? 0),
       };
-    }, { AB: 0, H: 0, BB: 0, HBP: 0, SF: 0, '2B': 0, '3B': 0, HR: 0, PA: 0 });
+    }, { AB: 0, H: 0, BB: 0, HBP: 0, SF: 0, SO: 0, '2B': 0, '3B': 0, HR: 0, PA: 0 });
 
     if (metric === 'AVG' && totals.AB > 0) {
       return totals.H / totals.AB;
@@ -535,6 +557,17 @@ function calculateRollingValue(
                    1.24 * totals['2B'] + 1.56 * totals['3B'] + 1.95 * totals.HR) / totals.PA;
       return wOBA;
     }
+    if (metric === 'K%' && totals.PA > 0) {
+      return totals.SO / totals.PA;
+    }
+    if (metric === 'BB%' && totals.PA > 0) {
+      return totals.BB / totals.PA;
+    }
+
+    // PBP-derived stats: use weighted average of per-game values if available
+    if (['Swing%', 'Contact%', 'GB%', 'Pull-Air%', 'HR/FB'].includes(metric)) {
+      return calculateWeightedAverageFromGames(games, metric, 'PA');
+    }
   } else {
     // Pitcher rate stats
     const totals = games.reduce((acc, game) => {
@@ -547,9 +580,10 @@ function calculateRollingValue(
         H: acc.H + (stats?.H ?? 0),
         BB: acc.BB + (stats?.BB ?? 0),
         SO: acc.SO + (stats?.SO ?? 0),
+        HBP: acc.HBP + (stats?.HBP ?? 0),
         BF: acc.BF + bf,
       };
-    }, { IP: 0, ER: 0, H: 0, BB: 0, SO: 0, BF: 0 });
+    }, { IP: 0, ER: 0, H: 0, BB: 0, SO: 0, HBP: 0, BF: 0 });
 
     if (metric === 'ERA' && totals.IP > 0) {
       return (9 * totals.ER) / totals.IP;
@@ -565,9 +599,44 @@ function calculateRollingValue(
       const bbPct = totals.BB / totals.BF;
       return kPct - bbPct;
     }
+    if (metric === 'K%' && totals.BF > 0) {
+      return totals.SO / totals.BF;
+    }
+    if (metric === 'BB%' && totals.BF > 0) {
+      return totals.BB / totals.BF;
+    }
+
+    // PBP-derived stats: use weighted average of per-game values if available
+    if (['GB%', 'HR/FB', 'CSW%', 'Whiff%'].includes(metric)) {
+      return calculateWeightedAverageFromGames(games, metric, 'IP');
+    }
   }
 
   return 0;
+}
+
+// Helper to calculate weighted average of a stat from game logs
+// Used for PBP-derived stats that can't be recalculated from counting stats
+function calculateWeightedAverageFromGames(
+  games: GameLogEntry[],
+  metric: string,
+  weightKey: 'PA' | 'IP'
+): number {
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const game of games) {
+    const stats = game.stats as BattingStats & PitchingStats;
+    const value = stats?.[metric as keyof typeof stats];
+    const weight = stats?.[weightKey] ?? 0;
+
+    if (typeof value === 'number' && weight > 0) {
+      weightedSum += value * weight;
+      totalWeight += weight;
+    }
+  }
+
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
 }
 
 function formatChartDate(dateString: string): string {

@@ -136,6 +136,29 @@ function mergeStatsByLevel<T extends BattingStats | PitchingStats>(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+// Helper to compute PA-weighted average of a rate stat across multiple months
+function weightedAverageByPA(
+  statsList: BattingStats[],
+  statKey: keyof BattingStats
+): number | undefined {
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const s of statsList) {
+    const val = s[statKey];
+    const pa = s.PA || 0;
+    if (typeof val === 'number' && pa > 0) {
+      weightedSum += val * pa;
+      totalWeight += pa;
+    }
+  }
+
+  if (totalWeight > 0) {
+    return Math.round((weightedSum / totalWeight) * 1000) / 1000;
+  }
+  return undefined;
+}
+
 // Aggregate batting stats from pre-computed monthly totals
 function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | undefined {
   if (statsList.length === 0) return undefined;
@@ -198,7 +221,45 @@ function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | 
     totals['wRC+'] = Math.round(wrcPlus);
   }
 
+  // Aggregate PBP-derived advanced stats using PA-weighted averaging
+  // Batted ball stats (ideally would weight by BIP, but PA is a reasonable proxy)
+  const advancedRateStats = [
+    'GB%', 'FB%', 'LD%', 'HR/FB',  // Batted ball stats
+    'Pull%', 'Pull-Air%',           // Pull stats
+    'Swing%', 'Contact%',           // Plate discipline
+  ] as const;
+
+  for (const stat of advancedRateStats) {
+    const weighted = weightedAverageByPA(statsList, stat);
+    if (weighted !== undefined) {
+      totals[stat] = weighted;
+    }
+  }
+
   return totals;
+}
+
+// Helper to compute IP-weighted average of a rate stat across multiple months for pitchers
+function weightedAverageByIP(
+  statsList: PitchingStats[],
+  statKey: keyof PitchingStats
+): number | undefined {
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const s of statsList) {
+    const val = s[statKey];
+    const ip = s.IP || 0;
+    if (typeof val === 'number' && ip > 0) {
+      weightedSum += val * ip;
+      totalWeight += ip;
+    }
+  }
+
+  if (totalWeight > 0) {
+    return Math.round((weightedSum / totalWeight) * 1000) / 1000;
+  }
+  return undefined;
 }
 
 // Aggregate pitching stats from pre-computed monthly totals
@@ -279,6 +340,19 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
     if (bip > 0) {
       const expectedHR = bip * 0.035;
       totals.xFIP = Math.round(((13 * expectedHR + 3 * (bb + hbp) - 2 * so) / ip + fipConstant) * 100) / 100;
+    }
+  }
+
+  // Aggregate PBP-derived advanced stats using IP-weighted averaging
+  const advancedRateStats = [
+    'GB%', 'FB%', 'LD%', 'HR/FB',  // Batted ball stats
+    'Swing%', 'Contact%', 'CSW%',   // Plate discipline / command
+  ] as const;
+
+  for (const stat of advancedRateStats) {
+    const weighted = weightedAverageByIP(statsList, stat);
+    if (weighted !== undefined) {
+      totals[stat] = weighted;
     }
   }
 
