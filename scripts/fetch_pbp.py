@@ -162,21 +162,37 @@ def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
     - pitch count, outcome stats
     """
     at_bats = []
+    game_pk = game_info.get('gamePk')
 
     if not pbp_data:
         return at_bats
 
     all_plays = pbp_data.get('allPlays', [])
     if not all_plays:
-        logger.debug(f"No plays found in PBP data for game {game_info.get('gamePk')}")
+        logger.debug(f"No plays found in PBP data for game {game_pk}")
+        return at_bats
+
+    # Log structure of first play for debugging
+    if all_plays:
+        first_play = all_plays[0]
+        logger.debug(f"Game {game_pk}: First play keys: {list(first_play.keys())}")
+        if 'matchup' in first_play:
+            logger.debug(f"Game {game_pk}: Matchup keys: {list(first_play.get('matchup', {}).keys())}")
+        if 'result' in first_play:
+            logger.debug(f"Game {game_pk}: Result keys: {list(first_play.get('result', {}).keys())}")
 
     for play in all_plays:
-        # Skip non-at-bat plays
-        if play.get('type') != 'atBat':
+        # Each play in allPlays represents a plate appearance
+        # Skip plays without matchup data (non-at-bat events like game start)
+        matchup = play.get('matchup', {})
+        if not matchup:
             continue
 
-        matchup = play.get('matchup', {})
+        # Skip plays without a batter (not actual at-bats)
         batter = matchup.get('batter', {})
+        if not batter or not batter.get('id'):
+            continue
+
         pitcher = matchup.get('pitcher', {})
         result = play.get('result', {})
 
@@ -216,7 +232,7 @@ def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
         at_bats.append(at_bat)
 
     if not at_bats and all_plays:
-        logger.debug(f"Found {len(all_plays)} plays but 0 at-bats for game {game_info.get('gamePk')}")
+        logger.debug(f"Game {game_pk}: Found {len(all_plays)} plays but extracted 0 at-bats (no valid matchup data)")
 
     return at_bats
 
