@@ -59,7 +59,7 @@ jobs:
 
       - name: Calculate advanced stats from PBP
         run: |
-          # Calculate GB%, FB%, LD%, Swing%, Contact%, CSW%, splits
+          # Calculate GB%, FB%, LD%, Pull%, Pull-Air%, Swing%, Contact%, CSW%, splits
           python scripts/calculate_advanced_stats.py \
             --yesterday \
             ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
