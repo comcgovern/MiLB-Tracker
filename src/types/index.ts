@@ -75,7 +75,12 @@ export interface BattingStats {
   'GB%'?: number;
   'FB%'?: number;
   'LD%'?: number;
+  'HR/FB'?: number;
   'Hard%'?: number;
+
+  // Plate Discipline
+  'Swing%'?: number;
+  'Contact%'?: number;
 
   // Statcast
   EV?: number;
@@ -117,6 +122,16 @@ export interface PitchingStats {
   FIP?: number;
   xFIP?: number;
   BABIP?: number;
+
+  // Batted Ball Against
+  'GB%'?: number;
+  'FB%'?: number;
+  'LD%'?: number;
+  'HR/FB'?: number;
+
+  // Plate Discipline (Against)
+  'Swing%'?: number;
+  'Contact%'?: number;
   'CSW%'?: number;
 
   // Statcast
@@ -172,6 +187,8 @@ export interface PlayerStatsData {
     last7?: BattingStats;
     last14?: BattingStats;
     last30?: BattingStats;
+    vsL?: BattingStats;  // Advanced stats vs left-handed pitchers
+    vsR?: BattingStats;  // Advanced stats vs right-handed pitchers
   };
   battingGameLog?: GameLogEntry[];
 
@@ -184,6 +201,8 @@ export interface PlayerStatsData {
     last7?: PitchingStats;
     last14?: PitchingStats;
     last30?: PitchingStats;
+    vsL?: PitchingStats;  // Advanced stats vs left-handed batters
+    vsR?: PitchingStats;  // Advanced stats vs right-handed batters
   };
   pitchingGameLog?: GameLogEntry[];
 }
