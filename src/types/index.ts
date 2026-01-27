@@ -78,6 +78,10 @@ export interface BattingStats {
   'HR/FB'?: number;
   'Hard%'?: number;
 
+  // Pull Stats
+  'Pull%'?: number;
+  'Pull-Air%'?: number;
+
   // Plate Discipline
   'Swing%'?: number;
   'Contact%'?: number;
