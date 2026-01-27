@@ -9,7 +9,6 @@ import { useLeagueAverages } from '../hooks/useLeagueAverages';
 import {
   calculateAllSituationalSplits,
   hasHomeAwayData,
-  hasOpponentHandData,
   getSituationalSplitGameCounts,
 } from '../utils/statsCalculator';
 
@@ -327,7 +326,6 @@ function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
   const splits = calculateAllSituationalSplits(gameLog, type);
   const gameCounts = getSituationalSplitGameCounts(gameLog);
   const hasHomeAway = hasHomeAwayData(gameLog);
-  const hasHandedness = hasOpponentHandData(gameLog);
 
   // Batting stat columns for splits
   const battingColumns: { key: keyof BattingStats; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
@@ -432,42 +430,6 @@ function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
         ) : (
           <p className="text-sm text-gray-500 dark:text-gray-400 italic">
             Home/away data not available for this player's games.
-          </p>
-        )}
-      </div>
-
-      {/* vs L/R Splits */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-          {isBatter ? 'vs Pitcher Handedness' : 'vs Batter Handedness'}
-        </h3>
-        {hasHandedness ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                    Split
-                  </th>
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {renderStatsRow('vs Left', splits.vsL, gameCounts.vsL)}
-                {renderStatsRow('vs Right', splits.vsR, gameCounts.vsR)}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400 italic">
-            Opponent handedness data not available yet. This feature requires additional data collection.
           </p>
         )}
       </div>

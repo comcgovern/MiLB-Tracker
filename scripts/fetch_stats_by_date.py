@@ -826,8 +826,8 @@ Examples:
     group.add_argument('--year', type=int,
                        help='Fetch full season for year (April-September)')
 
-    parser.add_argument('--workers', type=int, default=100,
-                        help='Number of parallel workers (default: 100)')
+    parser.add_argument('--workers', type=int, default=200,
+                        help='Number of parallel workers (default: 200)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug logging')
 
