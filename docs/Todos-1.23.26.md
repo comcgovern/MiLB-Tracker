@@ -24,16 +24,16 @@
 ### Pending
 
 #### High Priority
-14. PlayerDetailModal "More Info" tab - add external links (FanGraphs, MLB.com) and prospect rankings
-15. True wRC+ calculations - implement proper league-adjusted wRC+ with park factors if available
+14. PlayerDetailModal "More Info" tab - add external links (FanGraphs, MLB.com, Prospect Savant) and prospect rankings. Prospect Savant links should be easy to add, since the URL is just https://prospectsavant.com/player/[MLBid]; for example Trey Gibson is https://prospectsavant.com/player/694346. FanGraphs and MiLB stats will be more difficult. Prospect ranks will also be hard since there aren't many static sites with the numbers available that we can pull except maybe Pipeline.
+15. True wRC+ calculations - implement proper league-adjusted wRC+ with park factors if available (may need to use three year average park factors for 2022-2024 from Baseball America, https://www.baseballamerica.com/stories/three-year-minor-league-park-factors-including-left-right-splits/)
+16. Currently aggregate batted ball stats by PA rather than BIP, let's calculate BIP using the play by play data then use that as a denominator
+17. Add handedness splits using the PBP data. 
+19. Pull-air should use the number of batted balls in the air (FB+LD) as a denominator, so it's percentage of fly balls and line drives that are pulled
 
 #### Medium Priority
-16. Trend sparklines in stats table - small inline charts showing recent performance
+20. Trend sparklines in stats table - small inline charts showing recent performance
 
 #### Lower Priority (Phase 2+ features from spec)
-17. Player comparison tool (Spec 2.8.1)
-19. Alerts & notifications system (Spec 2.6)
-20. STATCAST SUPPORT
-
-#### Notes
-- Handedness splits (vs L/R) require opponent handedness data (opponentHand field) to be populated in game logs by the data pipeline. UI is ready but will show "data not available" message until this is implemented in the backend.
+21. Player comparison tool (Spec 2.8.1)
+22. Alerts & notifications system (Spec 2.6)
+23. STATCAST SUPPORT
