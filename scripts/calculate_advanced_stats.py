@@ -299,15 +299,23 @@ class PlayerAdvancedStats:
         elif opponent_hand == 'R' and self.vs_right is not None:
             self.vs_right.add_at_bat(at_bat, None, batter_hand)
 
-    def get_stats(self, is_batter: bool = True) -> dict:
-        """Calculate final rate stats from accumulated counts."""
+    def get_stats(self, is_batter: bool = True, min_bip: int = 10, min_pitches: int = 50,
+                   min_direction: int = 10) -> dict:
+        """Calculate final rate stats from accumulated counts.
+
+        Args:
+            is_batter: Whether this player is a batter (enables pull stats).
+            min_bip: Minimum classifiable BIP for batted ball rates.
+            min_pitches: Minimum pitches for plate discipline stats.
+            min_direction: Minimum BIP with direction for pull stats.
+        """
         stats = {}
 
         # Batted ball rates (among classifiable BIP)
         classifiable_bip = self.ground_balls + self.fly_balls + self.line_drives
         # Always output BIP count so frontend can weight by BIP when aggregating months
         stats['BIP'] = classifiable_bip
-        if classifiable_bip >= 10:  # Minimum sample size
+        if classifiable_bip >= min_bip:
             stats['GB%'] = round(self.ground_balls / classifiable_bip, 3)
             stats['FB%'] = round(self.fly_balls / classifiable_bip, 3)
             stats['LD%'] = round(self.line_drives / classifiable_bip, 3)
@@ -319,15 +327,15 @@ class PlayerAdvancedStats:
         # Pull stats (batters only)
         if is_batter:
             # Pull% - percentage of all BIP hit to the pull side
-            if self.bip_with_direction >= 10:  # Minimum sample size
+            if self.bip_with_direction >= min_direction:
                 stats['Pull%'] = round(self.pull_hits / self.bip_with_direction, 3)
 
             # Pull-Air% - percentage of fly balls and line drives hit to the pull side
-            if self.air_balls_with_direction >= 10:  # Minimum sample size
+            if self.air_balls_with_direction >= min_direction:
                 stats['Pull-Air%'] = round(self.pull_air_balls / self.air_balls_with_direction, 3)
 
         # Plate discipline
-        if self.total_pitches >= 50:  # Minimum sample size
+        if self.total_pitches >= min_pitches:
             if self.swings > 0:
                 stats['Swing%'] = round(self.swings / self.total_pitches, 3)
                 stats['Contact%'] = round(self.contacts / self.swings, 3) if self.swings > 0 else None
@@ -425,6 +433,41 @@ def process_games_for_stats(games: list[dict]) -> tuple[dict, dict, dict, dict]:
     return dict(batter_stats), dict(pitcher_stats), dict(batter_stats_by_level), dict(pitcher_stats_by_level)
 
 
+def process_games_per_game(games: list[dict]) -> tuple[dict, dict]:
+    """
+    Process PBP games to calculate per-game advanced stats for each player.
+
+    Returns:
+        (batter_per_game, pitcher_per_game)
+        - batter_per_game: dict mapping player_id to {gamePk: PlayerAdvancedStats}
+        - pitcher_per_game: dict mapping player_id to {gamePk: PlayerAdvancedStats}
+    """
+    # Nested: player_id -> gamePk -> PlayerAdvancedStats
+    batter_per_game: dict[str, dict[int, PlayerAdvancedStats]] = defaultdict(lambda: defaultdict(PlayerAdvancedStats))
+    pitcher_per_game: dict[str, dict[int, PlayerAdvancedStats]] = defaultdict(lambda: defaultdict(PlayerAdvancedStats))
+
+    for game in games:
+        game_pk = game.get('gamePk')
+        if not game_pk:
+            continue
+
+        for at_bat in game.get('atBats', []):
+            batter_id = at_bat.get('batterId')
+            pitcher_id = at_bat.get('pitcherId')
+            batter_hand = at_bat.get('batterHand')
+            pitcher_hand = at_bat.get('pitcherHand')
+
+            if batter_id:
+                bid = str(batter_id)
+                batter_per_game[bid][game_pk].add_at_bat(at_bat, pitcher_hand, batter_hand)
+
+            if pitcher_id:
+                pid = str(pitcher_id)
+                pitcher_per_game[pid][game_pk].add_at_bat(at_bat, batter_hand, None)
+
+    return dict(batter_per_game), dict(pitcher_per_game)
+
+
 def load_monthly_stats(year: int, month: int) -> dict:
     """Load existing monthly stats file."""
     month_file = STATS_DIR / str(year) / f'{month:02d}.json'
@@ -491,6 +534,54 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
                     player_data[by_level_key][level][key] = value
 
 
+def inject_per_game_stats(players: dict, batter_per_game: dict, pitcher_per_game: dict) -> int:
+    """
+    Inject per-game PBP-derived stats into game log entries.
+
+    Uses relaxed minimums (1 BIP, 1 pitch) since rolling windows handle noise.
+
+    Returns number of game log entries updated.
+    """
+    injected = 0
+
+    for player_id, game_stats in batter_per_game.items():
+        if player_id not in players:
+            continue
+        game_logs = players[player_id].get('battingGameLog', [])
+        for log_entry in game_logs:
+            game_id = log_entry.get('gameId')
+            if game_id and game_id in game_stats:
+                per_game = game_stats[game_id].get_stats(
+                    is_batter=True, min_bip=1, min_pitches=1, min_direction=1
+                )
+                # Inject PBP stats into the game's stats dict
+                stats = log_entry.get('stats', {})
+                for key, value in per_game.items():
+                    if value is not None:
+                        stats[key] = value
+                log_entry['stats'] = stats
+                injected += 1
+
+    for player_id, game_stats in pitcher_per_game.items():
+        if player_id not in players:
+            continue
+        game_logs = players[player_id].get('pitchingGameLog', [])
+        for log_entry in game_logs:
+            game_id = log_entry.get('gameId')
+            if game_id and game_id in game_stats:
+                per_game = game_stats[game_id].get_stats(
+                    is_batter=False, min_bip=1, min_pitches=1, min_direction=1
+                )
+                stats = log_entry.get('stats', {})
+                for key, value in per_game.items():
+                    if value is not None:
+                        stats[key] = value
+                log_entry['stats'] = stats
+                injected += 1
+
+    return injected
+
+
 def calculate_for_month(year: int, month: int) -> int:
     """
     Calculate advanced stats for a specific month.
@@ -507,8 +598,11 @@ def calculate_for_month(year: int, month: int) -> int:
 
     logger.info(f"Processing {len(games)} games")
 
-    # Calculate stats from PBP
+    # Calculate stats from PBP (monthly aggregates)
     batter_stats, pitcher_stats, batter_by_level, pitcher_by_level = process_games_for_stats(games)
+
+    # Calculate per-game stats from PBP
+    batter_per_game, pitcher_per_game = process_games_per_game(games)
 
     # Load existing monthly stats
     monthly_data = load_monthly_stats(year, month)
@@ -551,6 +645,10 @@ def calculate_for_month(year: int, month: int) -> int:
         if player_id in players:
             update_player_advanced_stats(players[player_id], adv_stats, splits, 'pitching', level_stats)
             updated_count += 1
+
+    # Inject per-game PBP stats into game log entries
+    injected = inject_per_game_stats(players, batter_per_game, pitcher_per_game)
+    logger.info(f"Injected PBP stats into {injected} game log entries")
 
     # Save updated stats
     monthly_data['players'] = players
