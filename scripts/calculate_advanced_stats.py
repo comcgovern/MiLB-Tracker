@@ -305,6 +305,8 @@ class PlayerAdvancedStats:
 
         # Batted ball rates (among classifiable BIP)
         classifiable_bip = self.ground_balls + self.fly_balls + self.line_drives
+        # Always output BIP count so frontend can weight by BIP when aggregating months
+        stats['BIP'] = classifiable_bip
         if classifiable_bip >= 10:  # Minimum sample size
             stats['GB%'] = round(self.ground_balls / classifiable_bip, 3)
             stats['FB%'] = round(self.fly_balls / classifiable_bip, 3)

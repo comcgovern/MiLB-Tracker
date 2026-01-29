@@ -159,6 +159,29 @@ function weightedAverageByPA(
   return undefined;
 }
 
+// Helper to compute BIP-weighted average of a rate stat across multiple months
+function weightedAverageByBIP(
+  statsList: BattingStats[],
+  statKey: keyof BattingStats
+): number | undefined {
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const s of statsList) {
+    const val = s[statKey];
+    const bip = s.BIP || 0;
+    if (typeof val === 'number' && bip > 0) {
+      weightedSum += val * bip;
+      totalWeight += bip;
+    }
+  }
+
+  if (totalWeight > 0) {
+    return Math.round((weightedSum / totalWeight) * 1000) / 1000;
+  }
+  return undefined;
+}
+
 // Aggregate batting stats from pre-computed monthly totals
 function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | undefined {
   if (statsList.length === 0) return undefined;
@@ -221,15 +244,32 @@ function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | 
     totals['wRC+'] = Math.round(wrcPlus);
   }
 
-  // Aggregate PBP-derived advanced stats using PA-weighted averaging
-  // Batted ball stats (ideally would weight by BIP, but PA is a reasonable proxy)
-  const advancedRateStats = [
+  // Sum BIP counts for downstream use
+  let totalBIP = 0;
+  for (const s of statsList) {
+    if (typeof s.BIP === 'number') totalBIP += s.BIP;
+  }
+  if (totalBIP > 0) totals.BIP = totalBIP;
+
+  // Aggregate batted ball stats using BIP-weighted averaging (more accurate than PA)
+  const bipWeightedStats = [
     'GB%', 'FB%', 'LD%', 'HR/FB',  // Batted ball stats
     'Pull%', 'Pull-Air%',           // Pull stats
+  ] as const;
+
+  for (const stat of bipWeightedStats) {
+    const weighted = weightedAverageByBIP(statsList, stat);
+    if (weighted !== undefined) {
+      totals[stat] = weighted;
+    }
+  }
+
+  // Plate discipline stats still weighted by PA (pitch-level stats scale with PA)
+  const paWeightedStats = [
     'Swing%', 'Contact%',           // Plate discipline
   ] as const;
 
-  for (const stat of advancedRateStats) {
+  for (const stat of paWeightedStats) {
     const weighted = weightedAverageByPA(statsList, stat);
     if (weighted !== undefined) {
       totals[stat] = weighted;
@@ -253,6 +293,29 @@ function weightedAverageByIP(
     if (typeof val === 'number' && ip > 0) {
       weightedSum += val * ip;
       totalWeight += ip;
+    }
+  }
+
+  if (totalWeight > 0) {
+    return Math.round((weightedSum / totalWeight) * 1000) / 1000;
+  }
+  return undefined;
+}
+
+// Helper to compute BIP-weighted average of a rate stat for pitchers
+function weightedAverageByBIPPitching(
+  statsList: PitchingStats[],
+  statKey: keyof PitchingStats
+): number | undefined {
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const s of statsList) {
+    const val = s[statKey];
+    const bip = s.BIP || 0;
+    if (typeof val === 'number' && bip > 0) {
+      weightedSum += val * bip;
+      totalWeight += bip;
     }
   }
 
@@ -343,13 +406,31 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
     }
   }
 
-  // Aggregate PBP-derived advanced stats using IP-weighted averaging
-  const advancedRateStats = [
+  // Sum BIP counts for downstream use
+  let totalBIP = 0;
+  for (const s of statsList) {
+    if (typeof s.BIP === 'number') totalBIP += s.BIP;
+  }
+  if (totalBIP > 0) totals.BIP = totalBIP;
+
+  // Aggregate batted ball stats using BIP-weighted averaging
+  const bipWeightedStats = [
     'GB%', 'FB%', 'LD%', 'HR/FB',  // Batted ball stats
+  ] as const;
+
+  for (const stat of bipWeightedStats) {
+    const weighted = weightedAverageByBIPPitching(statsList, stat);
+    if (weighted !== undefined) {
+      totals[stat] = weighted;
+    }
+  }
+
+  // Plate discipline stats weighted by IP
+  const ipWeightedStats = [
     'Swing%', 'Contact%', 'CSW%',   // Plate discipline / command
   ] as const;
 
-  for (const stat of advancedRateStats) {
+  for (const stat of ipWeightedStats) {
     const weighted = weightedAverageByIP(statsList, stat);
     if (weighted !== undefined) {
       totals[stat] = weighted;
