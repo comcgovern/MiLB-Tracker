@@ -384,17 +384,22 @@ def load_pbp_for_date(date_str: str) -> list[dict]:
         return []
 
 
-def process_games_for_stats(games: list[dict]) -> tuple[dict, dict]:
+def process_games_for_stats(games: list[dict]) -> tuple[dict, dict, dict, dict]:
     """
     Process PBP games to calculate advanced stats for batters and pitchers.
 
     Returns:
-        (batter_stats, pitcher_stats) - dicts mapping player_id to PlayerAdvancedStats
+        (batter_stats, pitcher_stats, batter_stats_by_level, pitcher_stats_by_level)
+        - batter_stats/pitcher_stats: dicts mapping player_id to PlayerAdvancedStats (overall)
+        - batter_stats_by_level/pitcher_stats_by_level: dicts mapping player_id to {level: PlayerAdvancedStats}
     """
     batter_stats: dict[str, PlayerAdvancedStats] = defaultdict(PlayerAdvancedStats)
     pitcher_stats: dict[str, PlayerAdvancedStats] = defaultdict(PlayerAdvancedStats)
+    batter_stats_by_level: dict[str, dict[str, PlayerAdvancedStats]] = defaultdict(lambda: defaultdict(PlayerAdvancedStats))
+    pitcher_stats_by_level: dict[str, dict[str, PlayerAdvancedStats]] = defaultdict(lambda: defaultdict(PlayerAdvancedStats))
 
     for game in games:
+        level = game.get('level', 'MiLB')
         for at_bat in game.get('atBats', []):
             batter_id = at_bat.get('batterId')
             pitcher_id = at_bat.get('pitcherId')
@@ -402,16 +407,20 @@ def process_games_for_stats(games: list[dict]) -> tuple[dict, dict]:
             pitcher_hand = at_bat.get('pitcherHand')
 
             if batter_id:
+                bid = str(batter_id)
                 # For batters, opponent hand is the pitcher's hand
                 # Pass batter_hand for pull stats calculation
-                batter_stats[str(batter_id)].add_at_bat(at_bat, pitcher_hand, batter_hand)
+                batter_stats[bid].add_at_bat(at_bat, pitcher_hand, batter_hand)
+                batter_stats_by_level[bid][level].add_at_bat(at_bat, pitcher_hand, batter_hand)
 
             if pitcher_id:
+                pid = str(pitcher_id)
                 # For pitchers, opponent hand is the batter's hand
                 # Don't pass batter_hand (no pull stats for pitchers)
-                pitcher_stats[str(pitcher_id)].add_at_bat(at_bat, batter_hand, None)
+                pitcher_stats[pid].add_at_bat(at_bat, batter_hand, None)
+                pitcher_stats_by_level[pid][level].add_at_bat(at_bat, batter_hand, None)
 
-    return dict(batter_stats), dict(pitcher_stats)
+    return dict(batter_stats), dict(pitcher_stats), dict(batter_stats_by_level), dict(pitcher_stats_by_level)
 
 
 def load_monthly_stats(year: int, month: int) -> dict:
@@ -442,8 +451,9 @@ def save_monthly_stats(data: dict, year: int, month: int) -> None:
     logger.info(f"Saved stats to {month_file}")
 
 
-def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dict, stat_type: str) -> None:
-    """Update a player's data with advanced stats and splits."""
+def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dict, stat_type: str,
+                                  level_stats: dict[str, dict] = None) -> None:
+    """Update a player's data with advanced stats, splits, and per-level PBP stats."""
     # Get the appropriate stats dict (batting or pitching)
     stats_key = 'batting' if stat_type == 'batting' else 'pitching'
 
@@ -465,6 +475,19 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
             if split_stats:
                 player_data[splits_key][split_name] = split_stats
 
+    # Add per-level PBP stats
+    if level_stats:
+        by_level_key = f'{stats_key}ByLevel'
+        if by_level_key not in player_data:
+            player_data[by_level_key] = {}
+
+        for level, lstats in level_stats.items():
+            if level not in player_data[by_level_key]:
+                player_data[by_level_key][level] = {}
+            for key, value in lstats.items():
+                if value is not None:
+                    player_data[by_level_key][level][key] = value
+
 
 def calculate_for_month(year: int, month: int) -> int:
     """
@@ -483,7 +506,7 @@ def calculate_for_month(year: int, month: int) -> int:
     logger.info(f"Processing {len(games)} games")
 
     # Calculate stats from PBP
-    batter_stats, pitcher_stats = process_games_for_stats(games)
+    batter_stats, pitcher_stats, batter_by_level, pitcher_by_level = process_games_for_stats(games)
 
     # Load existing monthly stats
     monthly_data = load_monthly_stats(year, month)
@@ -496,8 +519,16 @@ def calculate_for_month(year: int, month: int) -> int:
         adv_stats = stats_acc.get_stats(is_batter=True)
         splits = stats_acc.get_split_stats(is_batter=True)
 
+        # Build per-level stats
+        level_stats = {}
+        if player_id in batter_by_level:
+            for level, level_acc in batter_by_level[player_id].items():
+                level_adv = level_acc.get_stats(is_batter=True)
+                if level_adv:
+                    level_stats[level] = level_adv
+
         if player_id in players:
-            update_player_advanced_stats(players[player_id], adv_stats, splits, 'batting')
+            update_player_advanced_stats(players[player_id], adv_stats, splits, 'batting', level_stats)
             updated_count += 1
         # Note: We only update existing players, not create new ones
         # New players come from fetch_stats_by_date.py
@@ -507,8 +538,16 @@ def calculate_for_month(year: int, month: int) -> int:
         adv_stats = stats_acc.get_stats(is_batter=False)
         splits = stats_acc.get_split_stats(is_batter=False)
 
+        # Build per-level stats
+        level_stats = {}
+        if player_id in pitcher_by_level:
+            for level, level_acc in pitcher_by_level[player_id].items():
+                level_adv = level_acc.get_stats(is_batter=False)
+                if level_adv:
+                    level_stats[level] = level_adv
+
         if player_id in players:
-            update_player_advanced_stats(players[player_id], adv_stats, splits, 'pitching')
+            update_player_advanced_stats(players[player_id], adv_stats, splits, 'pitching', level_stats)
             updated_count += 1
 
     # Save updated stats
