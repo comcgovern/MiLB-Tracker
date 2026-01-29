@@ -72,6 +72,7 @@ export interface BattingStats {
   'wRC+'?: number;
 
   // Batted Ball
+  BIP?: number;  // Balls in play count (for weighting batted ball rate stats)
   'GB%'?: number;
   'FB%'?: number;
   'LD%'?: number;
@@ -128,6 +129,7 @@ export interface PitchingStats {
   BABIP?: number;
 
   // Batted Ball Against
+  BIP?: number;  // Balls in play count (for weighting batted ball rate stats)
   'GB%'?: number;
   'FB%'?: number;
   'LD%'?: number;
