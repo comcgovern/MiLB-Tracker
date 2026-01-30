@@ -1,0 +1,121 @@
+name: Backfill Statcast Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Year to fetch (YYYY)'
+        required: true
+        type: string
+        default: '2025'
+      month:
+        description: 'Specific month to fetch (1-12), leave empty for all months'
+        required: false
+        type: string
+      debug:
+        description: 'Enable debug logging'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  backfill-statcast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 hours for full year backfill
+
+    steps:
+      - name: Validate inputs
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          MONTH="${{ github.event.inputs.month }}"
+
+          if [ -z "$YEAR" ]; then
+            echo "Error: Year is required"
+            exit 1
+          fi
+
+          # Validate year format
+          if ! [[ "$YEAR" =~ ^[0-9]{4}$ ]]; then
+            echo "Error: Year must be in YYYY format"
+            exit 1
+          fi
+
+          # Validate month format if provided
+          if [ -n "$MONTH" ]; then
+            if ! [[ "$MONTH" =~ ^[1-9]$|^1[0-2]$ ]]; then
+              echo "Error: Month must be between 1 and 12"
+              exit 1
+            fi
+          fi
+
+          echo "Year: $YEAR"
+          if [ -n "$MONTH" ]; then
+            echo "Month: $MONTH"
+          else
+            echo "Fetching all season months (April-September)"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Backfill Statcast data (all months)
+        if: ${{ github.event.inputs.month == '' }}
+        run: |
+          python scripts/fetch_statcast.py \
+            --year ${{ github.event.inputs.year }} \
+            --all-months \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Backfill Statcast data (specific month)
+        if: ${{ github.event.inputs.month != '' }}
+        run: |
+          python scripts/fetch_statcast.py \
+            --year ${{ github.event.inputs.year }} \
+            --month ${{ github.event.inputs.month }} \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/
+
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            YEAR="${{ github.event.inputs.year }}"
+            MONTH="${{ github.event.inputs.month }}"
+
+            if [ -n "$MONTH" ]; then
+              COMMIT_MSG="Backfill Statcast data for $YEAR-$(printf '%02d' $MONTH)"
+            else
+              COMMIT_MSG="Backfill Statcast data for $YEAR season"
+            fi
+
+            git commit -m "$COMMIT_MSG"
+            git push
+          fi

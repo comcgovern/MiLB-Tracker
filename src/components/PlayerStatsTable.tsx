@@ -59,7 +59,7 @@ export function PlayerStatsTable({
     type === 'batter' ? BATTING_STATS[activeCategory] : PITCHING_STATS[activeCategory];
 
   // Keys for stats that come from the Savant statcast block (not PBP-derived)
-  const savantBatterKeys = ['BBE', 'EV', 'maxEV', 'EV50', 'EV90', 'Barrel%', 'Barrels', 'Hard%', 'Sweet Spot%', 'xBA', 'xSLG', 'xwOBA'];
+  const savantBatterKeys = ['BBE', 'EV', 'maxEV', 'EV50', 'EV90', 'LA', 'Barrel%', 'Barrels', 'Hard%', 'Sweet Spot%', 'xBA', 'xSLG', 'xwOBA'];
   const savantPitcherKeys = ['Velo', 'maxVelo', 'SpinRate', 'Extension', 'Whiff%', 'CSW%'];
 
   // If Statcast is selected but no one has it, show message
