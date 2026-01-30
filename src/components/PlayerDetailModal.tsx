@@ -521,17 +521,6 @@ function MoreInfoTab({ player }: MoreInfoTabProps) {
                 MiLB.com
               </a>
               <a
-                href={`https://www.fangraphs.com/players/${encodeURIComponent(player.name.toLowerCase().replace(/\s+/g, '-'))}/${player.mlbId}/stats`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                FanGraphs
-              </a>
-              <a
                 href={`https://www.mlb.com/player/${player.mlbId}`}
                 target="_blank"
                 rel="noopener noreferrer"
