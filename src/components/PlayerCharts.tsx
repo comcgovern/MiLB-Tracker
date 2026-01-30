@@ -109,6 +109,26 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
         };
       } else {
         // Rolling average view based on PA (batters) or IP (pitchers)
+        // Don't start calculating until the cumulative PA/IP threshold is met
+        const cumulativeGames = sortedGames.slice(0, index + 1);
+        let cumulativeAmount = 0;
+        for (const g of cumulativeGames) {
+          const s = g.stats as BattingStats & PitchingStats;
+          cumulativeAmount += isBatter ? (s?.PA ?? 0) : (s?.IP ?? 0);
+        }
+
+        const threshold = isBatter ? BATTER_ROLLING_PA : PITCHER_ROLLING_IP;
+        if (cumulativeAmount < threshold) {
+          // Not enough cumulative PA/IP yet - return null value
+          return {
+            name: formatChartDate(game.date),
+            gameNum: index + 1,
+            value: null,
+            games: 0,
+            level: currentLevel,
+          };
+        }
+
         const windowGames = getWindowGames(sortedGames, index, isBatter);
         const rollingValue = calculateRollingValue(windowGames, selectedMetric, isBatter);
 
@@ -203,15 +223,16 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
     return avgValue !== undefined ? { level, value: avgValue } : null;
   }, [leagueAverages, chartData, selectedMetric, isBatter]);
 
-  // Calculate season trend line
+  // Calculate season trend line (only from non-null data points)
   const trendData = useMemo(() => {
-    if (chartData.length < 2) return null;
+    const validData = chartData.filter(d => d.value !== null);
+    if (validData.length < 2) return null;
 
-    const n = chartData.length;
-    const sumX = chartData.reduce((sum, _, i) => sum + i, 0);
-    const sumY = chartData.reduce((sum, d) => sum + (d.value || 0), 0);
-    const sumXY = chartData.reduce((sum, d, i) => sum + i * (d.value || 0), 0);
-    const sumXX = chartData.reduce((sum, _, i) => sum + i * i, 0);
+    const n = validData.length;
+    const sumX = validData.reduce((sum, _, i) => sum + i, 0);
+    const sumY = validData.reduce((sum, d) => sum + (d.value || 0), 0);
+    const sumXY = validData.reduce((sum, d, i) => sum + i * (d.value || 0), 0);
+    const sumXX = validData.reduce((sum, _, i) => sum + i * i, 0);
 
     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
     const intercept = (sumY - slope * sumX) / n;
@@ -430,6 +451,7 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
                 strokeWidth={2}
                 dot={{ fill: selectedMetricConfig.color, strokeWidth: 0, r: 3 }}
                 activeDot={{ r: 5, strokeWidth: 0 }}
+                connectNulls={false}
               />
             </LineChart>
           </ResponsiveContainer>
