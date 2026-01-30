@@ -468,18 +468,18 @@ function mergeStatcastBatter(a: StatcastBatterData | undefined, b: StatcastBatte
     EV50: wavg(a.EV50, b.EV50),
     EV90: wavg(a.EV90, b.EV90),
     LA: wavg(a.LA, b.LA),
-    'Barrel%': wavg(a['Barrel%'], b['Barrel%']),
+    'Barrel%': wavg3(a['Barrel%'], b['Barrel%']),
     Barrels: (a.Barrels || 0) + (b.Barrels || 0) || undefined,
-    'Hard%': wavg(a['Hard%'], b['Hard%']),
-    'Sweet Spot%': wavg(a['Sweet Spot%'], b['Sweet Spot%']),
-    'GB%': wavg(a['GB%'], b['GB%']),
-    'FB%': wavg(a['FB%'], b['FB%']),
-    'LD%': wavg(a['LD%'], b['LD%']),
-    'PU%': wavg(a['PU%'], b['PU%']),
+    'Hard%': wavg3(a['Hard%'], b['Hard%']),
+    'Sweet Spot%': wavg3(a['Sweet Spot%'], b['Sweet Spot%']),
+    'GB%': wavg3(a['GB%'], b['GB%']),
+    'FB%': wavg3(a['FB%'], b['FB%']),
+    'LD%': wavg3(a['LD%'], b['LD%']),
+    'PU%': wavg3(a['PU%'], b['PU%']),
     xBA: wavg3(a.xBA, b.xBA),
     xSLG: wavg3(a.xSLG, b.xSLG),
     xwOBA: wavg3(a.xwOBA, b.xwOBA),
-    'Whiff%': wavg(a['Whiff%'], b['Whiff%']),
+    'Whiff%': wavg3(a['Whiff%'], b['Whiff%']),
   };
 }
 
@@ -498,6 +498,10 @@ function mergeStatcastPitcher(a: StatcastPitcherData | undefined, b: StatcastPit
     if (aVal !== undefined && bVal !== undefined) return Math.round((aVal * wA + bVal * wB) * 10) / 10;
     return aVal ?? bVal;
   };
+  const wavg3 = (aVal: number | undefined, bVal: number | undefined): number | undefined => {
+    if (aVal !== undefined && bVal !== undefined) return Math.round((aVal * wA + bVal * wB) * 1000) / 1000;
+    return aVal ?? bVal;
+  };
 
   // Merge arsenals
   let arsenal: Record<string, any> | undefined;
@@ -511,20 +515,24 @@ function mergeStatcastPitcher(a: StatcastPitcherData | undefined, b: StatcastPit
         const totalN = ap.n + bp.n;
         const pw = ap.n / totalN;
         const qw = bp.n / totalN;
-        const avg = (x: number | undefined, y: number | undefined) => {
+        const pavg = (x: number | undefined, y: number | undefined) => {
           if (x !== undefined && y !== undefined) return Math.round((x * pw + y * qw) * 10) / 10;
+          return x ?? y;
+        };
+        const pavg3 = (x: number | undefined, y: number | undefined) => {
+          if (x !== undefined && y !== undefined) return Math.round((x * pw + y * qw) * 1000) / 1000;
           return x ?? y;
         };
         arsenal[pt] = {
           n: totalN,
           pct: Math.round(totalN / totalPitches * 1000) / 1000,
-          v: avg(ap.v, bp.v),
+          v: pavg(ap.v, bp.v),
           maxV: Math.max(ap.maxV ?? 0, bp.maxV ?? 0) || undefined,
-          s: avg(ap.s, bp.s) !== undefined ? Math.round(avg(ap.s, bp.s)!) : undefined,
-          hMov: avg(ap.hMov, bp.hMov),
-          vMov: avg(ap.vMov, bp.vMov),
-          ext: avg(ap.ext, bp.ext),
-          whiff: avg(ap.whiff, bp.whiff),
+          s: pavg(ap.s, bp.s) !== undefined ? Math.round(pavg(ap.s, bp.s)!) : undefined,
+          hMov: pavg(ap.hMov, bp.hMov),
+          vMov: pavg(ap.vMov, bp.vMov),
+          ext: pavg(ap.ext, bp.ext),
+          whiff: pavg3(ap.whiff, bp.whiff),
         };
       } else {
         const p = ap || bp!;
@@ -539,8 +547,8 @@ function mergeStatcastPitcher(a: StatcastPitcherData | undefined, b: StatcastPit
     maxVelo: Math.max(a.maxVelo ?? 0, b.maxVelo ?? 0) || undefined,
     SpinRate: wavg(a.SpinRate, b.SpinRate) !== undefined ? Math.round(wavg(a.SpinRate, b.SpinRate)!) : undefined,
     Extension: wavg(a.Extension, b.Extension),
-    'Whiff%': wavg(a['Whiff%'], b['Whiff%']),
-    'CSW%': wavg(a['CSW%'], b['CSW%']),
+    'Whiff%': wavg3(a['Whiff%'], b['Whiff%']),
+    'CSW%': wavg3(a['CSW%'], b['CSW%']),
     arsenal,
   };
 }

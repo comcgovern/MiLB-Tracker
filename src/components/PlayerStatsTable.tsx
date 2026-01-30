@@ -58,6 +58,10 @@ export function PlayerStatsTable({
   const statColumns: StatColumn[] =
     type === 'batter' ? BATTING_STATS[activeCategory] : PITCHING_STATS[activeCategory];
 
+  // Keys for stats that come from the Savant statcast block (not PBP-derived)
+  const savantBatterKeys = ['BBE', 'EV', 'maxEV', 'EV50', 'EV90', 'Barrel%', 'Barrels', 'Hard%', 'Sweet Spot%', 'xBA', 'xSLG', 'xwOBA'];
+  const savantPitcherKeys = ['Velo', 'maxVelo', 'SpinRate', 'Extension', 'Whiff%', 'CSW%'];
+
   // If Statcast is selected but no one has it, show message
   const showStatcastNA = activeCategory === 'statcast' && !anyHasStatcast;
 
@@ -211,7 +215,14 @@ export function PlayerStatsTable({
                 </th>
 
                 {/* Stat columns - dynamic based on category */}
-                {showStatcastNA ? (
+                {activeCategory === 'arsenal' ? (
+                  <th
+                    colSpan={10}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"
+                  >
+                    Pitch Arsenal
+                  </th>
+                ) : showStatcastNA ? (
                   <th
                     colSpan={7}
                     className="px-4 py-3 text-center text-xs font-medium text-gray-400 dark:text-gray-500 italic"
@@ -236,7 +247,7 @@ export function PlayerStatsTable({
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-              {players.map(({ teamPlayer, player, stats, level, isTotal }, index) => {
+              {players.map(({ teamPlayer, player, stats, statcast: rowStatcast, level, isTotal }, index) => {
                 // Check if this is the first row for this player (for multi-level display)
                 const isFirstRowForPlayer = index === 0 || players[index - 1]?.teamPlayer.id !== teamPlayer.id;
                 // Check if next row is for same player (to avoid divider)
@@ -312,17 +323,14 @@ export function PlayerStatsTable({
                     {/* Stat columns */}
                     {activeCategory === 'arsenal' ? (
                       // Arsenal tab: render inline arsenal table for each pitcher
-                      <td colSpan={statColumns.length || 10} className="px-2 py-1">
-                        {(() => {
-                          const arsenal = (players.find(p => p.teamPlayer.id === teamPlayer.id)?.statcast?.pit?.arsenal);
-                          if (arsenal && isFirstRowForPlayer) {
-                            return <ArsenalTable arsenal={arsenal} playerName={player?.name || 'Unknown'} />;
-                          }
-                          if (isFirstRowForPlayer) {
-                            return <span className="text-gray-400 dark:text-gray-500 italic text-sm">No arsenal data available</span>;
-                          }
-                          return null;
-                        })()}
+                      <td colSpan={10} className="px-2 py-1">
+                        {isFirstRowForPlayer ? (
+                          rowStatcast?.pit?.arsenal ? (
+                            <ArsenalTable arsenal={rowStatcast.pit.arsenal} playerName={player?.name || 'Unknown'} />
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 italic text-sm">No arsenal data available</span>
+                          )
+                        ) : null}
                       </td>
                     ) : showStatcastNA ? (
                       <td colSpan={7} className="px-4 py-2 text-center text-sm text-gray-400 dark:text-gray-500 italic">
@@ -330,15 +338,11 @@ export function PlayerStatsTable({
                       </td>
                     ) : (
                       statColumns.map((col) => {
-                        // For the statcast category, try to pull Savant-specific metrics from
-                        // the statcast block, falling back to PBP-derived stats in regular stats
-                        const savantBatterKeys = ['BBE', 'EV', 'maxEV', 'EV50', 'EV90', 'Barrel%', 'Barrels', 'Hard%', 'Sweet Spot%', 'xBA', 'xSLG', 'xwOBA'];
-                        const savantPitcherKeys = ['Velo', 'maxVelo', 'SpinRate', 'Extension', 'Whiff%', 'CSW%'];
-
                         let value: number | undefined;
-                        const rowStatcast = players.find(p => p.teamPlayer.id === teamPlayer.id)?.statcast;
 
                         if (activeCategory === 'statcast') {
+                          // For the statcast category, pull Savant-specific metrics from
+                          // the statcast block, falling back to PBP-derived stats
                           if (type === 'batter' && savantBatterKeys.includes(col.key) && rowStatcast?.bat) {
                             value = rowStatcast.bat[col.key as keyof typeof rowStatcast.bat] as number | undefined;
                           } else if (type === 'pitcher' && savantPitcherKeys.includes(col.key) && rowStatcast?.pit) {
