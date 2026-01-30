@@ -5,12 +5,16 @@ interface StatCategoryToggleProps {
   activeCategory: StatCategory;
   onCategoryChange: (category: StatCategory) => void;
   hasStatcast?: boolean;
+  hasArsenal?: boolean;
+  playerType?: 'batter' | 'pitcher';
 }
 
 export function StatCategoryToggle({
   activeCategory,
   onCategoryChange,
   hasStatcast = true,
+  hasArsenal = false,
+  playerType = 'batter',
 }: StatCategoryToggleProps) {
   const categories: { key: StatCategory; label: string }[] = [
     { key: 'standard', label: 'Standard' },
@@ -18,11 +22,16 @@ export function StatCategoryToggle({
     { key: 'statcast', label: 'Statcast' },
   ];
 
+  // Add Arsenal tab only for pitchers
+  if (playerType === 'pitcher') {
+    categories.push({ key: 'arsenal', label: 'Arsenal' });
+  }
+
   return (
     <div className="inline-flex rounded-md shadow-sm" role="group">
       {categories.map(({ key, label }) => {
         const isActive = activeCategory === key;
-        const isDisabled = key === 'statcast' && !hasStatcast;
+        const isDisabled = (key === 'statcast' && !hasStatcast) || (key === 'arsenal' && !hasArsenal);
 
         return (
           <button
