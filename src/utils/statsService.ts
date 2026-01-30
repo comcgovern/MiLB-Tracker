@@ -1,7 +1,7 @@
 // utils/statsService.ts
 // Service for fetching and merging monthly stats files
 
-import type { StatsFile, PlayerStatsData, GameLogEntry, BattingStats, PitchingStats } from '../types';
+import type { StatsFile, PlayerStatsData, GameLogEntry, BattingStats, PitchingStats, StatcastBatterData, StatcastPitcherData } from '../types';
 
 const basePath = import.meta.env.VITE_BASE_PATH || '';
 
@@ -440,6 +440,126 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
   return totals;
 }
 
+// Merge statcast batter data from multiple months (weighted by BBE)
+function mergeStatcastBatter(a: StatcastBatterData | undefined, b: StatcastBatterData | undefined): StatcastBatterData | undefined {
+  if (!a) return b;
+  if (!b) return a;
+
+  const totalBBE = a.BBE + b.BBE;
+  if (totalBBE === 0) return a;
+
+  const wA = a.BBE / totalBBE;
+  const wB = b.BBE / totalBBE;
+
+  const wavg = (aVal: number | undefined, bVal: number | undefined): number | undefined => {
+    if (aVal !== undefined && bVal !== undefined) return Math.round((aVal * wA + bVal * wB) * 10) / 10;
+    return aVal ?? bVal;
+  };
+  const wavg3 = (aVal: number | undefined, bVal: number | undefined): number | undefined => {
+    if (aVal !== undefined && bVal !== undefined) return Math.round((aVal * wA + bVal * wB) * 1000) / 1000;
+    return aVal ?? bVal;
+  };
+
+  return {
+    BBE: totalBBE,
+    Pitches: (a.Pitches || 0) + (b.Pitches || 0) || undefined,
+    EV: wavg(a.EV, b.EV),
+    maxEV: Math.max(a.maxEV ?? 0, b.maxEV ?? 0) || undefined,
+    EV50: wavg(a.EV50, b.EV50),
+    EV90: wavg(a.EV90, b.EV90),
+    LA: wavg(a.LA, b.LA),
+    'Barrel%': wavg(a['Barrel%'], b['Barrel%']),
+    Barrels: (a.Barrels || 0) + (b.Barrels || 0) || undefined,
+    'Hard%': wavg(a['Hard%'], b['Hard%']),
+    'Sweet Spot%': wavg(a['Sweet Spot%'], b['Sweet Spot%']),
+    'GB%': wavg(a['GB%'], b['GB%']),
+    'FB%': wavg(a['FB%'], b['FB%']),
+    'LD%': wavg(a['LD%'], b['LD%']),
+    'PU%': wavg(a['PU%'], b['PU%']),
+    xBA: wavg3(a.xBA, b.xBA),
+    xSLG: wavg3(a.xSLG, b.xSLG),
+    xwOBA: wavg3(a.xwOBA, b.xwOBA),
+    'Whiff%': wavg(a['Whiff%'], b['Whiff%']),
+  };
+}
+
+// Merge statcast pitcher data from multiple months (weighted by Pitches)
+function mergeStatcastPitcher(a: StatcastPitcherData | undefined, b: StatcastPitcherData | undefined): StatcastPitcherData | undefined {
+  if (!a) return b;
+  if (!b) return a;
+
+  const totalPitches = a.Pitches + b.Pitches;
+  if (totalPitches === 0) return a;
+
+  const wA = a.Pitches / totalPitches;
+  const wB = b.Pitches / totalPitches;
+
+  const wavg = (aVal: number | undefined, bVal: number | undefined): number | undefined => {
+    if (aVal !== undefined && bVal !== undefined) return Math.round((aVal * wA + bVal * wB) * 10) / 10;
+    return aVal ?? bVal;
+  };
+
+  // Merge arsenals
+  let arsenal: Record<string, any> | undefined;
+  if (a.arsenal || b.arsenal) {
+    arsenal = {};
+    const allPitchTypes = new Set([...Object.keys(a.arsenal || {}), ...Object.keys(b.arsenal || {})]);
+    for (const pt of allPitchTypes) {
+      const ap = a.arsenal?.[pt];
+      const bp = b.arsenal?.[pt];
+      if (ap && bp) {
+        const totalN = ap.n + bp.n;
+        const pw = ap.n / totalN;
+        const qw = bp.n / totalN;
+        const avg = (x: number | undefined, y: number | undefined) => {
+          if (x !== undefined && y !== undefined) return Math.round((x * pw + y * qw) * 10) / 10;
+          return x ?? y;
+        };
+        arsenal[pt] = {
+          n: totalN,
+          pct: Math.round(totalN / totalPitches * 1000) / 1000,
+          v: avg(ap.v, bp.v),
+          maxV: Math.max(ap.maxV ?? 0, bp.maxV ?? 0) || undefined,
+          s: avg(ap.s, bp.s) !== undefined ? Math.round(avg(ap.s, bp.s)!) : undefined,
+          hMov: avg(ap.hMov, bp.hMov),
+          vMov: avg(ap.vMov, bp.vMov),
+          ext: avg(ap.ext, bp.ext),
+          whiff: avg(ap.whiff, bp.whiff),
+        };
+      } else {
+        const p = ap || bp!;
+        arsenal[pt] = { ...p, pct: Math.round(p.n / totalPitches * 1000) / 1000 };
+      }
+    }
+  }
+
+  return {
+    Pitches: totalPitches,
+    Velo: wavg(a.Velo, b.Velo),
+    maxVelo: Math.max(a.maxVelo ?? 0, b.maxVelo ?? 0) || undefined,
+    SpinRate: wavg(a.SpinRate, b.SpinRate) !== undefined ? Math.round(wavg(a.SpinRate, b.SpinRate)!) : undefined,
+    Extension: wavg(a.Extension, b.Extension),
+    'Whiff%': wavg(a['Whiff%'], b['Whiff%']),
+    'CSW%': wavg(a['CSW%'], b['CSW%']),
+    arsenal,
+  };
+}
+
+// Merge statcast blocks from multiple months
+function mergeStatcast(
+  a: PlayerStatsData['statcast'],
+  b: PlayerStatsData['statcast']
+): PlayerStatsData['statcast'] {
+  if (!a) return b;
+  if (!b) return a;
+
+  return {
+    bat: mergeStatcastBatter(a.bat, b.bat),
+    pit: mergeStatcastPitcher(a.pit, b.pit),
+    level: a.level || b.level,
+  };
+}
+
 // Merge player stats from multiple months
 function mergePlayerStats(existing: PlayerStatsData | undefined, newStats: PlayerStatsData): PlayerStatsData {
   if (!existing) return newStats;
@@ -471,6 +591,9 @@ function mergePlayerStats(existing: PlayerStatsData | undefined, newStats: Playe
       aggregatePitchingFromMonthly
     ),
     pitchingGameLog: mergeGameLogs(existing.pitchingGameLog, newStats.pitchingGameLog),
+
+    // Merge statcast data
+    statcast: mergeStatcast(existing.statcast, newStats.statcast),
   };
 }
 

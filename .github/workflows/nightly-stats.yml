@@ -66,6 +66,15 @@ jobs:
         env:
           PYTHONUNBUFFERED: '1'
 
+      - name: Fetch Statcast data (AAA + FSL)
+        run: |
+          # Fetch Statcast pitch-level data from Baseball Savant for AAA and Florida State League
+          # This enriches the monthly stats files with EV, barrel rate, arsenal, etc.
+          python scripts/fetch_statcast.py \
+            ${{ github.event.inputs.debug == 'true' && '--debug' || '' }}
+        env:
+          PYTHONUNBUFFERED: '1'
+
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"

@@ -90,12 +90,19 @@ export interface BattingStats {
   'Contact%'?: number;
 
   // Statcast
-  EV?: number;
-  LA?: number;
-  'Barrel%'?: number;
-  xBA?: number;
-  xSLG?: number;
-  xwOBA?: number;
+  BBE?: number;        // Batted Ball Events count
+  EV?: number;         // Average Exit Velocity (mph)
+  maxEV?: number;      // Max Exit Velocity (mph)
+  EV50?: number;       // 50th percentile Exit Velocity
+  EV90?: number;       // 90th percentile Exit Velocity
+  LA?: number;         // Average Launch Angle (degrees)
+  'Barrel%'?: number;  // Barrel rate
+  Barrels?: number;    // Barrel count
+  'Hard%'?: number;    // Hard hit rate (95+ mph)
+  'Sweet Spot%'?: number; // Launch angle 8-32 degrees
+  xBA?: number;        // Expected BA
+  xSLG?: number;       // Expected SLG
+  xwOBA?: number;      // Expected wOBA
 }
 
 export interface PitchingStats {
@@ -143,9 +150,27 @@ export interface PitchingStats {
   'CSW%'?: number;
 
   // Statcast
-  Velo?: number;
-  SpinRate?: number;
-  'Whiff%'?: number;
+  Velo?: number;          // Average fastball velocity
+  maxVelo?: number;       // Max fastball velocity
+  SpinRate?: number;      // Average spin rate
+  'Whiff%'?: number;      // Swinging strike rate
+  Extension?: number;     // Average release extension (ft)
+
+  // Arsenal (pitch mix) - compact format
+  // Each pitch type maps to { n, pct, v, maxV, s, hMov, vMov, ext, whiff }
+  arsenal?: Record<string, PitchArsenalEntry>;
+}
+
+export interface PitchArsenalEntry {
+  n: number;        // Count
+  pct: number;      // Usage percentage
+  v?: number;       // Average velocity
+  maxV?: number;    // Max velocity
+  s?: number;       // Average spin rate
+  hMov?: number;    // Horizontal movement (inches)
+  vMov?: number;    // Vertical (induced) movement (inches)
+  ext?: number;     // Extension (ft)
+  whiff?: number;   // Whiff rate for this pitch
 }
 
 export type MiLBLevel = 'AAA' | 'AA' | 'A+' | 'A' | 'CPX' | 'MiLB';
@@ -213,6 +238,46 @@ export interface PlayerStatsData {
     vsR?: PitchingStats;  // Advanced stats vs right-handed batters
   };
   pitchingGameLog?: GameLogEntry[];
+
+  // Statcast data (AAA + FSL only, keyed by level)
+  statcast?: {
+    bat?: StatcastBatterData;
+    pit?: StatcastPitcherData;
+    level?: string;
+  };
+}
+
+export interface StatcastBatterData {
+  BBE: number;
+  Pitches?: number;
+  EV?: number;
+  maxEV?: number;
+  EV50?: number;
+  EV90?: number;
+  LA?: number;
+  'Barrel%'?: number;
+  Barrels?: number;
+  'Hard%'?: number;
+  'Sweet Spot%'?: number;
+  'GB%'?: number;
+  'FB%'?: number;
+  'LD%'?: number;
+  'PU%'?: number;
+  xBA?: number;
+  xSLG?: number;
+  xwOBA?: number;
+  'Whiff%'?: number;
+}
+
+export interface StatcastPitcherData {
+  Pitches: number;
+  Velo?: number;
+  maxVelo?: number;
+  SpinRate?: number;
+  'Whiff%'?: number;
+  'CSW%'?: number;
+  Extension?: number;
+  arsenal?: Record<string, PitchArsenalEntry>;
 }
 
 export type Split = 'season' | 'lastSeason' | 'last7' | 'last14' | 'last30' | 'today' | 'yesterday' | 'custom';

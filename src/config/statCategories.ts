@@ -1,7 +1,7 @@
 // config/statCategories.ts
 // Defines which stats appear in each category for batters and pitchers
 
-export type StatCategory = 'standard' | 'advanced' | 'statcast';
+export type StatCategory = 'standard' | 'advanced' | 'statcast' | 'arsenal';
 
 export interface StatColumn {
   key: string;
@@ -41,23 +41,27 @@ export const BATTING_STATS: Record<StatCategory, StatColumn[]> = {
     { key: 'wRC+', label: 'wRC+', format: 'int' },
   ],
   statcast: [
-    { key: 'PA', label: 'PA', format: 'int' },
+    { key: 'BBE', label: 'BBE', format: 'int' },
+    { key: 'EV', label: 'Avg EV', format: 'decimal1' },
+    { key: 'EV50', label: '50th EV', format: 'decimal1' },
+    { key: 'EV90', label: '90th EV', format: 'decimal1' },
+    { key: 'maxEV', label: 'Max EV', format: 'decimal1' },
+    { key: 'LA', label: 'LA', format: 'decimal1' },
+    { key: 'Barrel%', label: 'Barrel%', format: 'percent' },
+    { key: 'Hard%', label: 'Hard%', format: 'percent' },
+    { key: 'Sweet Spot%', label: 'SwSp%', format: 'percent' },
     { key: 'GB%', label: 'GB%', format: 'percent' },
     { key: 'FB%', label: 'FB%', format: 'percent' },
     { key: 'LD%', label: 'LD%', format: 'percent' },
     { key: 'HR/FB', label: 'HR/FB', format: 'percent' },
     { key: 'Pull%', label: 'Pull%', format: 'percent' },
     { key: 'Pull-Air%', label: 'Pull-Air%', format: 'percent' },
-    { key: 'Center%', label: 'Center%', format: 'percent' },
     { key: 'Oppo%', label: 'Oppo%', format: 'percent' },
-    { key: 'Hard%', label: 'Hard%', format: 'percent' },
-    { key: 'EV', label: 'EV', format: 'decimal1' },
-    { key: 'LA', label: 'LA', format: 'decimal1' },
-    { key: 'Barrel%', label: 'Barrel%', format: 'percent' },
     { key: 'xBA', label: 'xBA', format: 'decimal3' },
     { key: 'xSLG', label: 'xSLG', format: 'decimal3' },
     { key: 'xwOBA', label: 'xwOBA', format: 'decimal3' },
   ],
+  arsenal: [], // Batting has no arsenal tab
 };
 
 // Pitching stat categories
@@ -92,12 +96,20 @@ export const PITCHING_STATS: Record<StatCategory, StatColumn[]> = {
   ],
   statcast: [
     { key: 'IP', label: 'IP', format: 'decimal1' },
+    { key: 'Velo', label: 'Velo', format: 'decimal1' },
+    { key: 'maxVelo', label: 'Max Velo', format: 'decimal1' },
+    { key: 'SpinRate', label: 'Spin', format: 'int' },
+    { key: 'Extension', label: 'Ext', format: 'decimal1' },
+    { key: 'Whiff%', label: 'Whiff%', format: 'percent' },
+    { key: 'CSW%', label: 'CSW%', format: 'percent' },
     { key: 'GB%', label: 'GB%', format: 'percent' },
     { key: 'FB%', label: 'FB%', format: 'percent' },
     { key: 'LD%', label: 'LD%', format: 'percent' },
     { key: 'HR/FB', label: 'HR/FB', format: 'percent' },
-    { key: 'Velo', label: 'Velo', format: 'decimal1' },
-    { key: 'SpinRate', label: 'Spin', format: 'int' },
+  ],
+  arsenal: [
+    // Arsenal tab is rendered dynamically from pitch mix data, not as fixed columns
+    // This array is a placeholder; the ArsenalTable component handles rendering
   ],
 };
 

@@ -291,31 +291,40 @@ def aggregate_batter_statcast(records: list[dict]) -> dict:
         'Pitches': total_pitches,
     }
 
-    evs = [bb['ev'] for bb in batted_balls if bb['ev'] is not None]
+    evs = sorted([bb['ev'] for bb in batted_balls if bb['ev'] is not None])
     if evs:
         result['EV'] = round(sum(evs) / len(evs), 1)
         result['maxEV'] = round(max(evs), 1)
+        # Percentiles
+        n = len(evs)
+        result['EV50'] = round(evs[n // 2], 1)
+        idx_90 = int(n * 0.9)
+        result['EV90'] = round(evs[min(idx_90, n - 1)], 1)
 
     las = [bb['la'] for bb in batted_balls if bb['la'] is not None]
     if las:
         result['LA'] = round(sum(las) / len(las), 1)
 
     barrels = sum(1 for bb in batted_balls if bb['barrel'])
-    result['Barrel%'] = round(barrels / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['Barrel%'] = round(barrels / total_bbe, 3) if total_bbe > 0 else 0
     result['Barrels'] = barrels
 
     hard_hits = sum(1 for bb in batted_balls if bb['ev'] and bb['ev'] >= 95)
-    result['Hard%'] = round(hard_hits / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['Hard%'] = round(hard_hits / total_bbe, 3) if total_bbe > 0 else 0
+
+    # Sweet Spot%: launch angle between 8 and 32 degrees
+    sweet_spots = sum(1 for bb in batted_balls if bb['la'] is not None and 8 <= bb['la'] <= 32)
+    result['Sweet Spot%'] = round(sweet_spots / total_bbe, 3) if total_bbe > 0 else 0
 
     gb_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'ground_ball')
     fb_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'fly_ball')
     ld_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'line_drive')
     popup_count = sum(1 for bb in batted_balls if bb['bb_type'] == 'popup')
 
-    result['GB%'] = round(gb_count / total_bbe * 100, 1) if total_bbe > 0 else 0
-    result['FB%'] = round(fb_count / total_bbe * 100, 1) if total_bbe > 0 else 0
-    result['LD%'] = round(ld_count / total_bbe * 100, 1) if total_bbe > 0 else 0
-    result['PU%'] = round(popup_count / total_bbe * 100, 1) if total_bbe > 0 else 0
+    result['GB%'] = round(gb_count / total_bbe, 3) if total_bbe > 0 else 0
+    result['FB%'] = round(fb_count / total_bbe, 3) if total_bbe > 0 else 0
+    result['LD%'] = round(ld_count / total_bbe, 3) if total_bbe > 0 else 0
+    result['PU%'] = round(popup_count / total_bbe, 3) if total_bbe > 0 else 0
 
     xbas = [bb['xba'] for bb in batted_balls if bb['xba'] is not None]
     xslgs = [bb['xslg'] for bb in batted_balls if bb['xslg'] is not None]
@@ -329,7 +338,7 @@ def aggregate_batter_statcast(records: list[dict]) -> dict:
         result['xwOBA'] = round(sum(xwobas) / len(xwobas), 3)
 
     if swings > 0:
-        result['Whiff%'] = round(whiffs / swings * 100, 1)
+        result['Whiff%'] = round(whiffs / swings, 3)
 
     return result
 
@@ -349,6 +358,7 @@ def aggregate_pitcher_statcast(records: list[dict]) -> dict:
     called_strikes = 0
     swinging_strikes = 0
     swings = 0
+    extensions = []
 
     for rec in records:
         total_pitches += 1
@@ -356,19 +366,40 @@ def aggregate_pitcher_statcast(records: list[dict]) -> dict:
         pitch_type = rec.get('pitch_type', 'UN')
         velo = safe_float(rec.get('release_speed'))
         spin = safe_float(rec.get('release_spin_rate'))
+        ext = safe_float(rec.get('release_extension'))
+        pfx_x = safe_float(rec.get('pfx_x'))  # horizontal movement (ft)
+        pfx_z = safe_float(rec.get('pfx_z'))  # vertical movement (ft)
 
-        if velo is not None:
-            pitch_data[pitch_type].append({
-                'velo': velo,
-                'spin': spin,
-            })
+        if ext is not None:
+            extensions.append(ext)
+
+        pitch_entry = {
+            'velo': velo,
+            'spin': spin,
+        }
+        # Store movement in inches (convert from feet)
+        if pfx_x is not None:
+            pitch_entry['hMov'] = pfx_x * 12
+        if pfx_z is not None:
+            pitch_entry['vMov'] = pfx_z * 12
+        if ext is not None:
+            pitch_entry['ext'] = ext
 
         desc = rec.get('description', '').lower()
+        is_swing = 'swing' in desc or 'foul' in desc or 'hit_into_play' in desc
+        is_whiff = 'swinging_strike' in desc or 'missed' in desc
+
+        pitch_entry['swing'] = is_swing
+        pitch_entry['whiff'] = is_whiff
+
+        if velo is not None:
+            pitch_data[pitch_type].append(pitch_entry)
+
         if 'called_strike' in desc:
             called_strikes += 1
-        if 'swinging_strike' in desc or 'missed' in desc:
+        if is_whiff:
             swinging_strikes += 1
-        if 'swing' in desc or 'foul' in desc or 'hit_into_play' in desc.lower():
+        if is_swing:
             swings += 1
 
     if total_pitches == 0:
@@ -397,33 +428,50 @@ def aggregate_pitcher_statcast(records: list[dict]) -> dict:
     if all_spins:
         result['SpinRate'] = round(sum(all_spins) / len(all_spins))
 
+    if extensions:
+        result['Extension'] = round(sum(extensions) / len(extensions), 1)
+
     if swings > 0:
-        result['Whiff%'] = round(swinging_strikes / swings * 100, 1)
+        result['Whiff%'] = round(swinging_strikes / swings, 3)
 
     csw = called_strikes + swinging_strikes
-    result['CSW%'] = round(csw / total_pitches * 100, 1) if total_pitches > 0 else 0
+    result['CSW%'] = round(csw / total_pitches, 3) if total_pitches > 0 else 0
 
-    # Pitch mix (compact format to reduce file size)
-    pitch_mix = {}
+    # Arsenal (expanded pitch mix with movement, extension, whiff rate)
+    arsenal = {}
     for pt, pitches in pitch_data.items():
         if len(pitches) >= 5:
             velos = [p['velo'] for p in pitches if p['velo'] is not None]
             spins = [p['spin'] for p in pitches if p['spin'] is not None]
+            h_movs = [p['hMov'] for p in pitches if p.get('hMov') is not None]
+            v_movs = [p['vMov'] for p in pitches if p.get('vMov') is not None]
+            exts = [p['ext'] for p in pitches if p.get('ext') is not None]
+            pt_swings = sum(1 for p in pitches if p.get('swing'))
+            pt_whiffs = sum(1 for p in pitches if p.get('whiff'))
 
             pitch_info = {
                 'n': len(pitches),
-                'pct': round(len(pitches) / total_pitches * 100, 1),
+                'pct': round(len(pitches) / total_pitches, 3),
             }
 
             if velos:
                 pitch_info['v'] = round(sum(velos) / len(velos), 1)
+                pitch_info['maxV'] = round(max(velos), 1)
             if spins:
                 pitch_info['s'] = round(sum(spins) / len(spins))
+            if h_movs:
+                pitch_info['hMov'] = round(sum(h_movs) / len(h_movs), 1)
+            if v_movs:
+                pitch_info['vMov'] = round(sum(v_movs) / len(v_movs), 1)
+            if exts:
+                pitch_info['ext'] = round(sum(exts) / len(exts), 1)
+            if pt_swings > 0:
+                pitch_info['whiff'] = round(pt_whiffs / pt_swings, 3)
 
-            pitch_mix[pt] = pitch_info
+            arsenal[pt] = pitch_info
 
-    if pitch_mix:
-        result['mix'] = pitch_mix
+    if arsenal:
+        result['arsenal'] = arsenal
 
     return result
 
@@ -651,6 +699,57 @@ def update_manifest(year: int, months: list[int]) -> None:
     logger.info(f"Updated manifest: {manifest_file}")
 
 
+def enrich_stats_with_statcast(year: int, month: int) -> None:
+    """
+    Enrich the monthly stats file with Statcast data.
+
+    Reads the statcast monthly file and the stats monthly file,
+    then adds statcast fields to each player's data in the stats file.
+    """
+    statcast_file = STATCAST_DIR / str(year) / f'{month:02d}.json'
+    stats_file = STATS_DIR / str(year) / f'{month:02d}.json'
+
+    if not statcast_file.exists():
+        logger.info(f"No statcast file for {year}/{month:02d}")
+        return
+
+    if not stats_file.exists():
+        logger.info(f"No stats file for {year}/{month:02d}")
+        return
+
+    with open(statcast_file) as f:
+        statcast_data = json.load(f)
+
+    with open(stats_file) as f:
+        stats_data = json.load(f)
+
+    sc_players = statcast_data.get('players', {})
+    st_players = stats_data.get('players', {})
+
+    enriched_count = 0
+    for player_id, sc in sc_players.items():
+        if player_id in st_players:
+            # Add statcast block to the player's stats
+            statcast_block = {}
+            if 'bat' in sc:
+                statcast_block['bat'] = sc['bat']
+            if 'pit' in sc:
+                statcast_block['pit'] = sc['pit']
+            if 'level' in sc:
+                statcast_block['level'] = sc['level']
+
+            if statcast_block:
+                st_players[player_id]['statcast'] = statcast_block
+                enriched_count += 1
+
+    stats_data['players'] = st_players
+
+    with open(stats_file, 'w') as f:
+        json.dump(stats_data, f, separators=(',', ':'))
+
+    logger.info(f"Enriched {enriched_count} players in stats/{year}/{month:02d}.json with Statcast data")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Fetch MiLB Statcast data from Baseball Savant')
     parser.add_argument('--year', type=int, default=datetime.now().year)
@@ -658,32 +757,39 @@ def main():
                         help='Specific month to fetch (default: current or all)')
     parser.add_argument('--all-months', action='store_true',
                         help='Fetch all season months (April-September)')
+    parser.add_argument('--enrich-only', action='store_true',
+                        help='Only enrich stats files with existing Statcast data (no fetching)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     args = parser.parse_args()
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    logger.info(f"Fetching {args.year} MiLB Statcast data...")
-    logger.info("Note: Statcast data is only available for AAA and Florida State League games")
-
-    session = get_session()
-    months_fetched = []
-
+    # Determine which months to process
     if args.month:
-        # Fetch specific month
         months_to_fetch = [args.month]
     elif args.all_months:
-        # Fetch all season months
         months_to_fetch = SEASON_MONTHS
     else:
-        # Fetch current month only
         current_month = datetime.now().month
         if current_month in SEASON_MONTHS:
             months_to_fetch = [current_month]
         else:
             logger.info(f"Month {current_month} is outside season (April-September)")
             months_to_fetch = []
+
+    # Enrich-only mode: skip fetching, just merge existing statcast data into stats files
+    if args.enrich_only:
+        logger.info(f"Enriching stats files with existing Statcast data for {args.year}...")
+        for month in months_to_fetch:
+            enrich_stats_with_statcast(args.year, month)
+        return
+
+    logger.info(f"Fetching {args.year} MiLB Statcast data...")
+    logger.info("Note: Statcast data is only available for AAA and Florida State League games")
+
+    session = get_session()
+    months_fetched = []
 
     for month in months_to_fetch:
         month_name = datetime(args.year, month, 1).strftime('%B')
@@ -726,7 +832,15 @@ def main():
         if (STATCAST_DIR / str(args.year) / f'{m:02d}.json').exists()
     ) if months_fetched else 0
 
-    logger.info(f"\nComplete! Fetched {len(months_fetched)} months, ~{total_players} player-months of data")
+    logger.info(f"\nFetched {len(months_fetched)} months, ~{total_players} player-months of data")
+
+    # Enrich stats files with the fetched Statcast data
+    if months_fetched:
+        logger.info("\nEnriching stats files with Statcast data...")
+        for month in months_fetched:
+            enrich_stats_with_statcast(args.year, month)
+
+    logger.info("Complete!")
 
 
 if __name__ == '__main__':

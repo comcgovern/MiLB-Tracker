@@ -6,7 +6,7 @@ import { db } from '../db';
 import { useUIStore } from '../stores/useUIStore';
 import { useTeamPlayers, type SortOption } from '../hooks/useTeamPlayers';
 import { PlayerStatsTable } from './PlayerStatsTable';
-import type { StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, PlayerStatsData } from '../types';
+import type { StatsFile, BattingStats, PitchingStats, Player, PlayerIndex, PlayerStatsData, StatcastBatterData, StatcastPitcherData } from '../types';
 import { getPlayerId } from '../types';
 import {
   calculateStatsForSplit,
@@ -262,6 +262,7 @@ export function StatsTable() {
     teamPlayer: typeof teamPlayers[0];
     player: NonNullable<typeof playersRegistry>['players'][0] | undefined;
     stats: BattingStats | PitchingStats | undefined;
+    statcast?: PlayerStatsData['statcast'];
     level?: MiLBLevel;  // undefined means it's a single-level player
     isTotal?: boolean;  // true for the MiLB total row
   }
@@ -381,6 +382,7 @@ export function StatsTable() {
           teamPlayer: tp,
           player,
           stats: levelStats,
+          statcast: playerStats?.statcast,
           level,
           isTotal: false,
         };
@@ -415,6 +417,7 @@ export function StatsTable() {
         teamPlayer: tp,
         player,
         stats: totalStats,
+        statcast: playerStats?.statcast,
         level: 'MiLB',
         isTotal: true,
       };
@@ -452,6 +455,7 @@ export function StatsTable() {
         teamPlayer: tp,
         player,
         stats,
+        statcast: playerStats?.statcast,
         level: displayLevel,
         isTotal: false,
       };

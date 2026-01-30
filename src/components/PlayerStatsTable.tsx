@@ -1,6 +1,7 @@
 // components/PlayerStatsTable.tsx
 import { useState, useRef } from 'react';
 import { StatCategoryToggle } from './StatCategoryToggle';
+import { ArsenalTable } from './ArsenalTable';
 import {
   type StatCategory,
   type StatColumn,
@@ -8,7 +9,7 @@ import {
   PITCHING_STATS,
   formatStatValue,
 } from '../config/statCategories';
-import type { Player, BattingStats, PitchingStats, MiLBLevel } from '../types';
+import type { Player, BattingStats, PitchingStats, MiLBLevel, PlayerStatsData, PitchArsenalEntry } from '../types';
 import type { DBTeamPlayer } from '../db';
 import type { SortOption } from '../hooks/useTeamPlayers';
 
@@ -16,6 +17,7 @@ interface PlayerRow {
   teamPlayer: DBTeamPlayer;
   player: Player | undefined;
   stats: BattingStats | PitchingStats | undefined;
+  statcast?: PlayerStatsData['statcast'];  // Statcast data for this player
   level?: MiLBLevel;  // The level for this row (undefined = use player.level)
   isTotal?: boolean;  // true for MiLB total rows
 }
@@ -48,6 +50,9 @@ export function PlayerStatsTable({
 
   // Check if any player in this table has Statcast data
   const anyHasStatcast = players.some((p) => p.player?.hasStatcast);
+
+  // Check if any pitcher has arsenal data
+  const anyHasArsenal = type === 'pitcher' && players.some((p) => p.statcast?.pit?.arsenal);
 
   // Get the stat columns for the current category and player type
   const statColumns: StatColumn[] =
@@ -173,6 +178,8 @@ export function PlayerStatsTable({
             activeCategory={activeCategory}
             onCategoryChange={setActiveCategory}
             hasStatcast={anyHasStatcast}
+            hasArsenal={anyHasArsenal}
+            playerType={type}
           />
         </div>
       </div>
@@ -303,19 +310,54 @@ export function PlayerStatsTable({
                     </td>
 
                     {/* Stat columns */}
-                    {showStatcastNA ? (
+                    {activeCategory === 'arsenal' ? (
+                      // Arsenal tab: render inline arsenal table for each pitcher
+                      <td colSpan={statColumns.length || 10} className="px-2 py-1">
+                        {(() => {
+                          const arsenal = (players.find(p => p.teamPlayer.id === teamPlayer.id)?.statcast?.pit?.arsenal);
+                          if (arsenal && isFirstRowForPlayer) {
+                            return <ArsenalTable arsenal={arsenal} playerName={player?.name || 'Unknown'} />;
+                          }
+                          if (isFirstRowForPlayer) {
+                            return <span className="text-gray-400 dark:text-gray-500 italic text-sm">No arsenal data available</span>;
+                          }
+                          return null;
+                        })()}
+                      </td>
+                    ) : showStatcastNA ? (
                       <td colSpan={7} className="px-4 py-2 text-center text-sm text-gray-400 dark:text-gray-500 italic">
                         N/A
                       </td>
                     ) : (
                       statColumns.map((col) => {
-                        const value = stats?.[col.key as keyof typeof stats] as number | undefined;
-                        // For Statcast, show N/A if the player doesn't have Statcast data
+                        // For the statcast category, try to pull Savant-specific metrics from
+                        // the statcast block, falling back to PBP-derived stats in regular stats
+                        const savantBatterKeys = ['BBE', 'EV', 'maxEV', 'EV50', 'EV90', 'Barrel%', 'Barrels', 'Hard%', 'Sweet Spot%', 'xBA', 'xSLG', 'xwOBA'];
+                        const savantPitcherKeys = ['Velo', 'maxVelo', 'SpinRate', 'Extension', 'Whiff%', 'CSW%'];
+
+                        let value: number | undefined;
+                        const rowStatcast = players.find(p => p.teamPlayer.id === teamPlayer.id)?.statcast;
+
+                        if (activeCategory === 'statcast') {
+                          if (type === 'batter' && savantBatterKeys.includes(col.key) && rowStatcast?.bat) {
+                            value = rowStatcast.bat[col.key as keyof typeof rowStatcast.bat] as number | undefined;
+                          } else if (type === 'pitcher' && savantPitcherKeys.includes(col.key) && rowStatcast?.pit) {
+                            value = rowStatcast.pit[col.key as keyof typeof rowStatcast.pit] as number | undefined;
+                          } else {
+                            value = stats?.[col.key as keyof typeof stats] as number | undefined;
+                          }
+                        } else {
+                          value = stats?.[col.key as keyof typeof stats] as number | undefined;
+                        }
+
+                        // For Statcast Savant-only metrics, show N/A if no statcast data
+                        const isSavantKey = type === 'batter'
+                          ? savantBatterKeys.includes(col.key)
+                          : savantPitcherKeys.includes(col.key);
                         const showNA =
                           activeCategory === 'statcast' &&
-                          !player?.hasStatcast &&
-                          col.key !== 'PA' &&
-                          col.key !== 'IP';
+                          isSavantKey &&
+                          !rowStatcast;
 
                         return (
                           <td
