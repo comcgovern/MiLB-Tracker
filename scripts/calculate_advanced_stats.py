@@ -115,7 +115,7 @@ def is_pull_hit(direction: str, batter_hand: str) -> bool:
     return False
 
 
-def classify_batted_ball(result: str, event_type: str) -> Optional[str]:
+def classify_batted_ball(result: str, event_type: str, description: str = '') -> Optional[str]:
     """
     Classify a batted ball as GB, FB, LD, or None (if not classifiable).
 
@@ -138,8 +138,16 @@ def classify_batted_ball(result: str, event_type: str) -> Optional[str]:
     if event_type == 'home_run':
         return 'FB'
 
-    # For other hits (single, double, triple), we can't reliably classify
-    # without Statcast data
+    # For hits (single, double, triple), parse description for trajectory
+    if event_type in HIT_EVENTS and description:
+        desc_lower = description.lower()
+        if 'ground ball' in desc_lower:
+            return 'GB'
+        if 'line drive' in desc_lower:
+            return 'LD'
+        if 'fly ball' in desc_lower or 'pop up' in desc_lower:
+            return 'FB'
+
     return None
 
 
@@ -169,11 +177,8 @@ class PlayerAdvancedStats:
         self.air_balls_with_direction = 0
         self.pull_air_balls = 0
 
-        # Plate discipline (pitch-level)
+        # Pitch count tracking (for future use if pitch-level data becomes available)
         self.total_pitches = 0
-        self.swings = 0  # Pitches swung at (approximation: pitches - balls)
-        self.contacts = 0  # Swings that made contact (non-strikeout swings)
-        self.called_strikes_whiffs = 0  # For CSW%
 
         # Split tracking
         self.vs_left = PlayerAdvancedStats.__new__(PlayerAdvancedStats) if not hasattr(self, '_is_split') else None
@@ -198,9 +203,6 @@ class PlayerAdvancedStats:
         self.air_balls_with_direction = 0
         self.pull_air_balls = 0
         self.total_pitches = 0
-        self.swings = 0
-        self.contacts = 0
-        self.called_strikes_whiffs = 0
         self.vs_left = None
         self.vs_right = None
 
@@ -214,7 +216,7 @@ class PlayerAdvancedStats:
         strikes = at_bat.get('strikes', 0)
 
         # Batted ball classification
-        bb_type = classify_batted_ball(result, event_type)
+        bb_type = classify_batted_ball(result, event_type, description)
         if bb_type == 'GB':
             self.ground_balls += 1
         elif bb_type == 'FB':
@@ -257,41 +259,9 @@ class PlayerAdvancedStats:
                         if is_pull_hit(direction, batter_hand):
                             self.pull_air_balls += 1
 
-        # Pitch-level stats
+        # Track total pitches
         if pitch_count > 0:
             self.total_pitches += pitch_count
-
-            # Swings approximation: total pitches - balls = potential swing pitches
-            # This includes called strikes, fouls, swinging strikes, and balls in play
-            swings_approx = pitch_count - balls
-            self.swings += swings_approx
-
-            # Contact approximation: if not a strikeout, they made contact on final pitch
-            # Plus any fouls before that (estimated as strikes - 1 for non-K, strikes - 3 for K)
-            if event_type not in STRIKEOUT_EVENTS:
-                # Made contact on final swing, plus estimate prior fouls
-                # Fouls = strikes seen before final contact (capped at strikes - 1)
-                prior_fouls = max(0, strikes - 1) if strikes > 0 else 0
-                self.contacts += 1 + prior_fouls
-            else:
-                # Strikeout: fouls = strikes - 3 (since strike 3 was a whiff)
-                prior_fouls = max(0, strikes - 3)
-                self.contacts += prior_fouls
-
-            # CSW (Called Strikes + Whiffs) - for pitchers
-            # Approximation: strikes that weren't fouls or in play
-            # CSW events = strikeouts (3 whiffs or called) + walks with called strikes
-            if event_type in STRIKEOUT_EVENTS:
-                # At least 3 CSW events (the strikeouts)
-                self.called_strikes_whiffs += 3
-            elif event_type in WALK_EVENTS:
-                # Walks had some called strikes
-                self.called_strikes_whiffs += strikes
-            else:
-                # Contact plays: estimate CSW as strikes minus fouls minus 1 (for BIP)
-                # Minimum 0
-                csw_estimate = max(0, strikes - max(0, strikes - 1) - 1)
-                self.called_strikes_whiffs += csw_estimate
 
         # Track splits by opponent hand
         if opponent_hand == 'L' and self.vs_left is not None:
@@ -334,14 +304,9 @@ class PlayerAdvancedStats:
             if self.air_balls_with_direction >= min_direction:
                 stats['Pull-Air%'] = round(self.pull_air_balls / self.air_balls_with_direction, 3)
 
-        # Plate discipline
-        if self.total_pitches >= min_pitches:
-            if self.swings > 0:
-                stats['Swing%'] = round(self.swings / self.total_pitches, 3)
-                stats['Contact%'] = round(self.contacts / self.swings, 3) if self.swings > 0 else None
-
-            # CSW% (primarily for pitchers)
-            stats['CSW%'] = round(self.called_strikes_whiffs / self.total_pitches, 3)
+        # Note: Swing%, Contact%, and CSW% removed because they cannot be
+        # accurately calculated from at-bat-level data (would need individual
+        # pitch-level data to distinguish called strikes from swinging strikes).
 
         return stats
 
@@ -505,6 +470,11 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
     if stats_key not in player_data:
         player_data[stats_key] = {}
 
+    # Remove stale PBP stats that are no longer calculated
+    stale_keys = ['Swing%', 'Contact%', 'CSW%', 'Whiff%']
+    for key in stale_keys:
+        player_data[stats_key].pop(key, None)
+
     # Add advanced stats to the main stats
     for key, value in adv_stats.items():
         if value is not None:
@@ -519,6 +489,10 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
         for split_name, split_stats in splits.items():
             if split_stats:
                 player_data[splits_key][split_name] = split_stats
+        # Clean stale stats from existing splits
+        for split_name in list(player_data[splits_key].keys()):
+            for key in stale_keys:
+                player_data[splits_key][split_name].pop(key, None) if isinstance(player_data[splits_key][split_name], dict) else None
 
     # Add per-level PBP stats
     if level_stats:

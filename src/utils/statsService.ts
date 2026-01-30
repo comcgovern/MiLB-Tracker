@@ -264,18 +264,6 @@ function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | 
     }
   }
 
-  // Plate discipline stats still weighted by PA (pitch-level stats scale with PA)
-  const paWeightedStats = [
-    'Swing%', 'Contact%',           // Plate discipline
-  ] as const;
-
-  for (const stat of paWeightedStats) {
-    const weighted = weightedAverageByPA(statsList, stat);
-    if (weighted !== undefined) {
-      totals[stat] = weighted;
-    }
-  }
-
   return totals;
 }
 
@@ -373,7 +361,8 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
     totals['HR/9'] = Math.round((9 * hr / ip) * 10) / 10;
   }
 
-  const bf = h + bb + so + hbp;
+  // Batters faced ≈ outs + baserunners = 3*IP + H + BB + HBP
+  const bf = ipTotal + h + bb + hbp;
   if (bf > 0) {
     totals['K%'] = Math.round((so / bf) * 1000) / 1000;
     totals['BB%'] = Math.round((bb / bf) * 1000) / 1000;
@@ -420,18 +409,6 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
 
   for (const stat of bipWeightedStats) {
     const weighted = weightedAverageByBIPPitching(statsList, stat);
-    if (weighted !== undefined) {
-      totals[stat] = weighted;
-    }
-  }
-
-  // Plate discipline stats weighted by IP
-  const ipWeightedStats = [
-    'Swing%', 'Contact%', 'CSW%',   // Plate discipline / command
-  ] as const;
-
-  for (const stat of ipWeightedStats) {
-    const weighted = weightedAverageByIP(statsList, stat);
     if (weighted !== undefined) {
       totals[stat] = weighted;
     }

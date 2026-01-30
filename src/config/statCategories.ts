@@ -34,8 +34,6 @@ export const BATTING_STATS: Record<StatCategory, StatColumn[]> = {
     { key: 'ISO', label: 'ISO', format: 'decimal3' },
     { key: 'BB%', label: 'BB%', format: 'percent' },
     { key: 'K%', label: 'K%', format: 'percent' },
-    { key: 'Swing%', label: 'Swing%', format: 'percent' },
-    { key: 'Contact%', label: 'Contact%', format: 'percent' },
     { key: 'BABIP', label: 'BABIP', format: 'decimal3' },
     { key: 'wOBA', label: 'wOBA', format: 'decimal3' },
     { key: 'wRC+', label: 'wRC+', format: 'int' },
@@ -83,8 +81,6 @@ export const PITCHING_STATS: Record<StatCategory, StatColumn[]> = {
     { key: 'K%', label: 'K%', format: 'percent' },
     { key: 'BB%', label: 'BB%', format: 'percent' },
     { key: 'K%-BB%', label: 'K%-BB%', format: 'percent' },
-    { key: 'Swing%', label: 'Swing%', format: 'percent' },
-    { key: 'CSW%', label: 'CSW%', format: 'percent' },
     { key: 'FIP', label: 'FIP', format: 'decimal2' },
     { key: 'xFIP', label: 'xFIP', format: 'decimal2' },
     { key: 'BABIP', label: 'BABIP', format: 'decimal3' },
@@ -95,10 +91,8 @@ export const PITCHING_STATS: Record<StatCategory, StatColumn[]> = {
     { key: 'FB%', label: 'FB%', format: 'percent' },
     { key: 'LD%', label: 'LD%', format: 'percent' },
     { key: 'HR/FB', label: 'HR/FB', format: 'decimal3' },
-    { key: 'Contact%', label: 'Contact%', format: 'percent' },
     { key: 'Velo', label: 'Velo', format: 'decimal1' },
     { key: 'SpinRate', label: 'Spin', format: 'int' },
-    { key: 'Whiff%', label: 'Whiff%', format: 'percent' },
   ],
 };
 
