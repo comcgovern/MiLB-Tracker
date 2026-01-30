@@ -119,8 +119,10 @@ def fetch_statcast_csv(
     """
     # Parameters aligned with pybaseball's statcast query format
     # Reference: https://github.com/jldbc/pybaseball/blob/master/docs/statcast.md
+    # Critical: must include 'minors': 'true' even though endpoint is /statcast-search-minors/
     params = {
         'all': 'true',
+        'minors': 'true',  # Required for minors endpoint to return data
         'hfPT': '',
         'hfAB': '',
         'hfBBT': '',
@@ -536,6 +538,57 @@ def process_statcast_data(
     return players
 
 
+def submit_initial_requests(
+    session: requests.Session,
+    year: int,
+    chunks: list[tuple[str, str]],
+    player_type: str,
+    level: str,
+) -> None:
+    """
+    Submit initial warm-up requests (sabRmetrics strategy).
+
+    Like sabRmetrics, we submit all requests upfront with a short timeout
+    to queue them on the server. This helps the server prepare the data
+    before we actually download it with the full timeout.
+
+    Args:
+        session: Requests session
+        year: Season year
+        chunks: List of (start_date, end_date) tuples
+        player_type: 'batter' or 'pitcher'
+        level: 'aaa' for Triple-A or 'a' for Single-A
+    """
+    logger.debug("    Submitting initial warm-up requests...")
+
+    for chunk_start, chunk_end in chunks:
+        params = {
+            'all': 'true',
+            'minors': 'true',
+            'hfGT': 'R|',
+            'hfSea': f'{year}|',
+            'player_type': player_type,
+            'game_date_gt': chunk_start,
+            'game_date_lt': chunk_end,
+            'min_pitches': '0',
+            'min_results': '0',
+            'group_by': 'name',
+            'type': 'details',
+        }
+
+        if level == 'aaa':
+            params['hfLevel'] = 'AAA|'
+        elif level == 'a':
+            params['hfLevel'] = 'A|'
+
+        try:
+            # Short timeout - just to queue the request on the server
+            session.get(SAVANT_MINORS_URL, params=params, timeout=1)
+        except Exception:
+            # Ignore failures - this is just a warm-up
+            pass
+
+
 def fetch_chunked_statcast(
     session: requests.Session,
     year: int,
@@ -547,11 +600,12 @@ def fetch_chunked_statcast(
     """
     Fetch Statcast data using 5-day chunks (sabRmetrics strategy).
 
-    This approach:
+    This approach (following sabRmetrics and the R implementation):
     1. Splits date range into 5-day chunks
-    2. Fetches each chunk with retries
-    3. Warns if any chunk hits the 25,000 row limit
-    4. Combines all data
+    2. Submits initial warm-up requests to queue data on server
+    3. Downloads each chunk with full timeout and retries
+    4. Warns if any chunk hits the 25,000 row limit
+    5. Combines all data
 
     Args:
         session: Requests session
@@ -570,6 +624,11 @@ def fetch_chunked_statcast(
 
     logger.info(f"    Downloading {n_chunks} chunk(s) ({CHUNK_DAYS}-day periods) for {level_name} {player_type}s...")
 
+    # Phase 1: Submit initial warm-up requests (sabRmetrics strategy)
+    submit_initial_requests(session, year, chunks, player_type, level)
+
+    # Phase 2: Download actual data with full timeout and retries
+    logger.debug("    Downloading data chunks...")
     all_records = []
     chunks_at_limit = 0
 
