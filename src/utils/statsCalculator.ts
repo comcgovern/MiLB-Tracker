@@ -163,7 +163,7 @@ export function aggregateBattingStats(games: GameLogEntry[]): BattingStats | und
   if (totalBIP > 0) totals.BIP = totalBIP;
 
   // BIP-weighted stats (batted ball rates)
-  for (const stat of ['GB%', 'FB%', 'LD%', 'HR/FB'] as const) {
+  for (const stat of ['GB%', 'FB%', 'LD%', 'HR/FB', 'Pull%', 'Pull-Air%', 'Center%', 'Oppo%'] as const) {
     let weightedSum = 0;
     let totalWeight = 0;
     for (const game of games) {

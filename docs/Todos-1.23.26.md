@@ -30,6 +30,9 @@
 17. Add handedness splits using the PBP data.
 19. ~~Pull-air should use the number of batted balls in the air (FB+LD) as a denominator, so it's percentage of fly balls and line drives that are pulled~~ VERIFIED: Already implemented correctly - Pull-Air% uses air_balls_with_direction (FB+LD) as denominator in calculate_advanced_stats.py
 
+24. Add Pull% and Pull-Air% to rolling charts (PlayerCharts.tsx BATTER_METRICS)
+25. UI fixes: remove blank gap at beginning of rolling charts before minimum threshold is reached; improve Teams display mobile accessibility
+
 #### Medium Priority
 20. Trend sparklines in stats table - small inline charts showing recent performance
 

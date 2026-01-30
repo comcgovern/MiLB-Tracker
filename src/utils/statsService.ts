@@ -253,7 +253,7 @@ function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | 
 
   // Aggregate batted ball stats using BIP-weighted averaging (more accurate than PA)
   const bipWeightedStats = [
-    'GB%', 'FB%', 'LD%', 'HR/FB',  // Batted ball stats
+    'GB%', 'FB%', 'LD%', 'HR/FB', 'Pull%', 'Pull-Air%', 'Center%', 'Oppo%',  // Batted ball stats
   ] as const;
 
   for (const stat of bipWeightedStats) {
@@ -415,7 +415,7 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
 
   // Aggregate batted ball stats using BIP-weighted averaging
   const bipWeightedStats = [
-    'GB%', 'FB%', 'LD%', 'HR/FB',  // Batted ball stats
+    'GB%', 'FB%', 'LD%', 'HR/FB', 'Pull%', 'Pull-Air%', 'Center%', 'Oppo%',  // Batted ball stats
   ] as const;
 
   for (const stat of bipWeightedStats) {
