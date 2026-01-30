@@ -38,7 +38,7 @@ const BATTER_METRICS: ChartMetric[] = [
   { key: 'Swing%', label: 'Swing%', color: '#7c3aed', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'Contact%', label: 'Contact%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
-  { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => v.toFixed(3), pbpWeightKey: 'BIP' },
+  { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
 ];
 
 const PITCHER_METRICS: ChartMetric[] = [
@@ -49,7 +49,7 @@ const PITCHER_METRICS: ChartMetric[] = [
   { key: 'K%', label: 'K%', color: '#dc2626', format: (v) => (v * 100).toFixed(1) + '%' },
   { key: 'BB%', label: 'BB%', color: '#16a34a', format: (v) => (v * 100).toFixed(1) + '%' },
   { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
-  { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => v.toFixed(3), pbpWeightKey: 'BIP' },
+  { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'CSW%', label: 'CSW%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'IP' },
 ];
 
