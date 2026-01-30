@@ -9,7 +9,7 @@ import {
   PITCHING_STATS,
   formatStatValue,
 } from '../config/statCategories';
-import type { Player, BattingStats, PitchingStats, MiLBLevel, PlayerStatsData, PitchArsenalEntry } from '../types';
+import type { Player, BattingStats, PitchingStats, MiLBLevel, PlayerStatsData } from '../types';
 import type { DBTeamPlayer } from '../db';
 import type { SortOption } from '../hooks/useTeamPlayers';
 
@@ -326,7 +326,7 @@ export function PlayerStatsTable({
                       <td colSpan={10} className="px-2 py-1">
                         {isFirstRowForPlayer ? (
                           rowStatcast?.pit?.arsenal ? (
-                            <ArsenalTable arsenal={rowStatcast.pit.arsenal} playerName={player?.name || 'Unknown'} />
+                            <ArsenalTable arsenal={rowStatcast.pit.arsenal} />
                           ) : (
                             <span className="text-gray-400 dark:text-gray-500 italic text-sm">No arsenal data available</span>
                           )
