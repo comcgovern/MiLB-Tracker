@@ -30,8 +30,11 @@
 17. Add handedness splits using the PBP data.
 19. ~~Pull-air should use the number of batted balls in the air (FB+LD) as a denominator, so it's percentage of fly balls and line drives that are pulled~~ VERIFIED: Already implemented correctly - Pull-Air% uses air_balls_with_direction (FB+LD) as denominator in calculate_advanced_stats.py
 
-24. Add Pull% and Pull-Air% to rolling charts (PlayerCharts.tsx BATTER_METRICS)
-25. UI fixes: remove blank gap at beginning of rolling charts before minimum threshold is reached; improve Teams display mobile accessibility
+24. Add Pull-Air% to rolling charts (PlayerCharts.tsx BATTER_METRICS)
+25. Barrel% is not calculating correctly for Statcast stats
+26. Players who played at multiple levels who have Statcast stats at one of those levels have the stats filled down rather than showing NA for levels that dont have Statcast data (for example, Trey Gibson pitched at A+, AA, and AAA in 2025. he has Statcast data from his AAA time which is showing correctly, but those numbers are copied on the AA and A+ lines even though Statcast data isnt available at that level)
+28. UI fixes: remove blank gap at beginning of rolling charts before minimum threshold is reached; improve Teams display mobile accessibility (for example, by moving the sort order box and the stat display tabs below rather than all on tbe same row)
+29. calculate the percentile for each stat for qualified players at that level for that year the way Savant and Prospect Savant do it, showing it on a red (high) and blue (low) scale. when you mouse over or tap on mobile, it should show you what nth percentile that value is for that level for that year. add a toggle to switch between this view and the standard view 
 
 #### Medium Priority
 20. Trend sparklines in stats table - small inline charts showing recent performance
