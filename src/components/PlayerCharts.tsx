@@ -38,7 +38,6 @@ const BATTER_METRICS: ChartMetric[] = [
   { key: 'Swing%', label: 'Swing%', color: '#7c3aed', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'Contact%', label: 'Contact%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
-  { key: 'Pull-Air%', label: 'Pull-Air%', color: '#be185d', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => v.toFixed(3), pbpWeightKey: 'BIP' },
 ];
 
@@ -564,7 +563,7 @@ function calculateRollingValue(
     }
 
     // PBP-derived stats: use appropriate weighting
-    if (['GB%', 'Pull-Air%', 'HR/FB'].includes(metric)) {
+    if (['GB%', 'HR/FB'].includes(metric)) {
       return calculateWeightedAverageFromGames(games, metric, 'BIP');
     }
     if (['Swing%', 'Contact%'].includes(metric)) {

@@ -46,8 +46,6 @@ export const BATTING_STATS: Record<StatCategory, StatColumn[]> = {
     { key: 'FB%', label: 'FB%', format: 'percent' },
     { key: 'LD%', label: 'LD%', format: 'percent' },
     { key: 'HR/FB', label: 'HR/FB', format: 'decimal3' },
-    { key: 'Pull%', label: 'Pull%', format: 'percent' },
-    { key: 'Pull-Air%', label: 'Pull-Air%', format: 'percent' },
     { key: 'Hard%', label: 'Hard%', format: 'percent' },
     { key: 'EV', label: 'EV', format: 'decimal1' },
     { key: 'LA', label: 'LA', format: 'decimal1' },

@@ -80,7 +80,7 @@ CONTACT_CODES = {'F', 'T', 'L', 'X', 'D', 'E', 'O', 'R'}
 CSW_CODES = {'C', 'S', 'M', 'W', 'Q'}
 
 # All codes that count as a pitch for Swing% denominator
-PITCH_CODES = {'B', 'C', 'S', 'F', 'T', 'L', 'M', 'W', 'I', 'P', 'V', 'X', 'D', 'E', 'H', 'O', 'Q', 'R'}
+PITCH_CODES = {'B', 'C', 'S', 'F', 'T', 'L', 'M', 'W', 'I', 'P', 'V', 'X', 'D', 'E', 'H', 'O', 'Q', 'R', '*B'}
 
 # hitData.trajectory values from the MLB API
 TRAJECTORY_GB = {'ground_ball'}
@@ -194,12 +194,6 @@ class PlayerAdvancedStats:
         self.line_drives = 0
         self.home_runs = 0  # Subset of fly balls
 
-        # Pull stats tracking
-        self.bip_with_direction = 0
-        self.pull_hits = 0
-        self.air_balls_with_direction = 0
-        self.pull_air_balls = 0
-
         # Pitch-level stats (from individual pitch call codes)
         self.total_pitches = 0
         self.swings = 0
@@ -227,10 +221,6 @@ class PlayerAdvancedStats:
         self.fly_balls = 0
         self.line_drives = 0
         self.home_runs = 0
-        self.bip_with_direction = 0
-        self.pull_hits = 0
-        self.air_balls_with_direction = 0
-        self.pull_air_balls = 0
         self.total_pitches = 0
         self.swings = 0
         self.contacts = 0
@@ -270,26 +260,6 @@ class PlayerAdvancedStats:
         elif bb_type == 'LD':
             self.line_drives += 1
 
-        # --- Pull stats ---
-        if is_ball_in_play(event_type) and batter_hand and batter_hand != 'S':
-            # Prefer coordinate-based pull detection
-            is_pull = determine_pull_from_coordinates(coord_x, batter_hand)
-
-            if is_pull is not None:
-                self.bip_with_direction += 1
-                if is_pull:
-                    self.pull_hits += 1
-
-                # Track air balls for Pull-Air%
-                is_air = bb_type in ('FB', 'LD')
-                # Also use trajectory if available
-                if not is_air and trajectory:
-                    is_air = trajectory.lower() in ('fly_ball', 'line_drive', 'popup')
-                if is_air:
-                    self.air_balls_with_direction += 1
-                    if is_pull:
-                        self.pull_air_balls += 1
-
         # --- Pitch-level stats ---
         if pitches:
             self.has_pitch_data = True
@@ -320,10 +290,10 @@ class PlayerAdvancedStats:
         """Calculate final rate stats from accumulated counts.
 
         Args:
-            is_batter: Whether this player is a batter (enables pull stats).
+            is_batter: Whether this player is a batter.
             min_bip: Minimum classifiable BIP for batted ball rates.
             min_pitches: Minimum pitches for plate discipline stats.
-            min_direction: Minimum BIP with direction for pull stats.
+            min_direction: Unused, kept for API compatibility.
         """
         stats = {}
 
@@ -339,14 +309,6 @@ class PlayerAdvancedStats:
             # HR/FB rate
             if self.fly_balls > 0:
                 stats['HR/FB'] = round(self.home_runs / self.fly_balls, 3)
-
-        # Pull stats (batters only)
-        if is_batter:
-            if self.bip_with_direction >= min_direction:
-                stats['Pull%'] = round(self.pull_hits / self.bip_with_direction, 3)
-
-            if self.air_balls_with_direction >= min_direction:
-                stats['Pull-Air%'] = round(self.pull_air_balls / self.air_balls_with_direction, 3)
 
         # Plate discipline stats (only when pitch-level data is available)
         if self.has_pitch_data and self.total_pitches >= min_pitches:
@@ -513,7 +475,7 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
 
     # Remove stale PBP stats that may be from old inaccurate calculations
     # (they'll be re-added below if pitch-level data is available)
-    stale_keys = ['Swing%', 'Contact%', 'CSW%', 'Whiff%']
+    stale_keys = ['Swing%', 'Contact%', 'CSW%', 'Whiff%', 'Pull%', 'Pull-Air%']
     for key in stale_keys:
         player_data[stats_key].pop(key, None)
 
@@ -547,6 +509,9 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
         for level, lstats in level_stats.items():
             if level not in player_data[by_level_key]:
                 player_data[by_level_key][level] = {}
+            # Remove stale keys from by-level stats
+            for key in stale_keys:
+                player_data[by_level_key][level].pop(key, None)
             for key, value in lstats.items():
                 if value is not None:
                     player_data[by_level_key][level][key] = value
@@ -574,6 +539,9 @@ def inject_per_game_stats(players: dict, batter_per_game: dict, pitcher_per_game
                 )
                 # Inject PBP stats into the game's stats dict
                 stats = log_entry.get('stats', {})
+                # Remove stale keys
+                for key in ['Pull%', 'Pull-Air%']:
+                    stats.pop(key, None)
                 for key, value in per_game.items():
                     if value is not None:
                         stats[key] = value
