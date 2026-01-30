@@ -367,8 +367,8 @@ class PlayerAdvancedStats:
             stats['Oppo%'] = round(self.oppo_count / total_with_direction, 3)
 
         # Pull-Air% (pull rate among FB + LD only)
-        if self.air_balls_with_direction >= min_bip:
-            stats['Pull-Air%'] = round(self.air_pull_count / self.air_balls_with_direction, 3)
+        if self.pull_count >= min_bip:
+            stats['Pull-Air%'] = round(self.air_pull_count / self.pull_count, 3)
 
         # Plate discipline stats (only when pitch-level data is available)
         if self.has_pitch_data and self.total_pitches >= min_pitches:
