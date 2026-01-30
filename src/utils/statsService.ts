@@ -264,6 +264,18 @@ function aggregateBattingFromMonthly(statsList: BattingStats[]): BattingStats | 
     }
   }
 
+  // Plate discipline stats weighted by PA (only present when pitch-level data is available)
+  const paWeightedStats = [
+    'Swing%', 'Contact%',
+  ] as const;
+
+  for (const stat of paWeightedStats) {
+    const weighted = weightedAverageByPA(statsList, stat);
+    if (weighted !== undefined) {
+      totals[stat] = weighted;
+    }
+  }
+
   return totals;
 }
 
@@ -409,6 +421,18 @@ function aggregatePitchingFromMonthly(statsList: PitchingStats[]): PitchingStats
 
   for (const stat of bipWeightedStats) {
     const weighted = weightedAverageByBIPPitching(statsList, stat);
+    if (weighted !== undefined) {
+      totals[stat] = weighted;
+    }
+  }
+
+  // Plate discipline / command stats weighted by IP (only present when pitch-level data is available)
+  const ipWeightedStats = [
+    'Swing%', 'Contact%', 'CSW%',
+  ] as const;
+
+  for (const stat of ipWeightedStats) {
+    const weighted = weightedAverageByIP(statsList, stat);
     if (weighted !== undefined) {
       totals[stat] = weighted;
     }

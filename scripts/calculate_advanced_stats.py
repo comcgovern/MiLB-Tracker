@@ -23,7 +23,6 @@ Usage:
 import argparse
 import json
 import logging
-import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -44,8 +43,56 @@ STATS_DIR = DATA_DIR / 'stats'
 # Season months (April = 4 through September = 9)
 SEASON_MONTHS = [4, 5, 6, 7, 8, 9]
 
-# Batted ball classification based on result text
-# Note: We can only classify outs reliably; hits could be any type
+# ============================================================================
+# Pitch call code reference table
+# ============================================================================
+# MLB Stats API pitch call codes from details.call.code:
+#
+# Code | Description          | Ball? | Strike? | Swing? | Contact? | CSW?
+# -----|----------------------|-------|---------|--------|----------|-----
+#  B   | Ball                 |  Yes  |   No    |   No   |    No    |  No
+#  C   | Called Strike         |  No   |   Yes   |   No   |    No    | Yes
+#  S   | Swinging Strike      |  No   |   Yes   |  Yes   |    No    | Yes
+#  F   | Foul                 |  No   |   Yes   |  Yes   |   Yes    |  No
+#  T   | Foul Tip             |  No   |   Yes   |  Yes   |   Yes    |  No
+#  L   | Foul Bunt            |  No   |   Yes   |  Yes   |   Yes    |  No
+#  M   | Missed Bunt          |  No   |   Yes   |  Yes   |    No    | Yes
+#  W   | Swinging Strike (Blocked) | No | Yes   |  Yes   |    No    | Yes
+#  I   | Intentional Ball     |  Yes  |   No    |   No   |    No    |  No
+#  P   | Pitchout             |  Yes  |   No    |   No   |    No    |  No
+#  V   | Automatic Ball       |  Yes  |   No    |   No   |    No    |  No
+#  X   | In Play, Out(s)      |  No   |   No    |  Yes   |   Yes    |  No
+#  D   | In Play, No Out      |  No   |   No    |  Yes   |   Yes    |  No
+#  E   | In Play, Run(s)      |  No   |   No    |  Yes   |   Yes    |  No
+#  H   | Hit By Pitch         |  No   |   No    |   No   |    No    |  No
+#  O   | Foul Pitchout        |  No   |   Yes   |  Yes   |   Yes    |  No
+#  Q   | Swinging Pitchout    |  No   |   Yes   |  Yes   |    No    | Yes
+#  R   | Foul Tip (Bunt)      |  No   |   Yes   |  Yes   |   Yes    |  No
+# ============================================================================
+
+# Pitch codes that count as swings (batter offered at the pitch)
+SWING_CODES = {'S', 'F', 'T', 'L', 'M', 'W', 'X', 'D', 'E', 'O', 'Q', 'R'}
+
+# Pitch codes where batter made contact (subset of swings)
+CONTACT_CODES = {'F', 'T', 'L', 'X', 'D', 'E', 'O', 'R'}
+
+# Pitch codes that count as CSW (Called Strikes + Whiffs)
+CSW_CODES = {'C', 'S', 'M', 'W', 'Q'}
+
+# All codes that count as a pitch for Swing% denominator
+PITCH_CODES = {'B', 'C', 'S', 'F', 'T', 'L', 'M', 'W', 'I', 'P', 'V', 'X', 'D', 'E', 'H', 'O', 'Q', 'R'}
+
+# hitData.trajectory values from the MLB API
+TRAJECTORY_GB = {'ground_ball'}
+TRAJECTORY_FB = {'fly_ball', 'popup'}
+TRAJECTORY_LD = {'line_drive'}
+
+# Event types for classification
+STRIKEOUT_EVENTS = {'strikeout', 'strikeout_double_play'}
+WALK_EVENTS = {'walk', 'intent_walk', 'hit_by_pitch'}
+HIT_EVENTS = {'single', 'double', 'triple', 'home_run'}
+
+# Batted ball classification based on result text (fallback when no hitData)
 GROUNDBALL_RESULTS = {
     'Groundout', 'Bunt Groundout', 'Grounded Into DP', 'Forceout',
     'Fielders Choice', 'Fielders Choice Out', 'Double Play'
@@ -53,80 +100,33 @@ GROUNDBALL_RESULTS = {
 FLYBALL_RESULTS = {'Flyout', 'Pop Out', 'Sac Fly'}
 LINEDRIVE_RESULTS = {'Lineout'}
 
-# Patterns to detect hit direction from play descriptions
-# Matches: "to left fielder", "to left field", "to left", "down the left field line"
-LEFT_FIELD_PATTERN = re.compile(
-    r'\bto\s+left\s+field(?:er)?\b|\bto\s+left\b|\bdown\s+the\s+left[- ]field\s+line\b',
-    re.IGNORECASE
-)
-RIGHT_FIELD_PATTERN = re.compile(
-    r'\bto\s+right\s+field(?:er)?\b|\bto\s+right\b|\bdown\s+the\s+right[- ]field\s+line\b',
-    re.IGNORECASE
-)
-CENTER_FIELD_PATTERN = re.compile(
-    r'\bto\s+center\s+field(?:er)?\b|\bto\s+center\b|\bup\s+the\s+middle\b',
-    re.IGNORECASE
-)
-
-# Event types for classification
-STRIKEOUT_EVENTS = {'strikeout', 'strikeout_double_play'}
-WALK_EVENTS = {'walk', 'intent_walk', 'hit_by_pitch'}
-HIT_EVENTS = {'single', 'double', 'triple', 'home_run'}
+# Pull% coordinate thresholds
+# Coordinates are centered at x≈125 for dead center from home plate's perspective
+# Values <100 are right field side, values >150 are left field side
+# Center is roughly 100-150
+PULL_CENTER_LEFT = 100   # Below this = right field side
+PULL_CENTER_RIGHT = 150  # Above this = left field side
 
 
-def parse_hit_direction(description: str) -> Optional[str]:
-    """
-    Parse the hit direction from a play description.
-
-    Returns:
-        'left', 'center', 'right', or None if direction can't be determined
-    """
-    if not description:
+def classify_batted_ball_from_trajectory(trajectory: Optional[str]) -> Optional[str]:
+    """Classify using hitData.trajectory from the API (preferred method)."""
+    if not trajectory:
         return None
-
-    # Check each pattern - order matters since we return on first match
-    if LEFT_FIELD_PATTERN.search(description):
-        return 'left'
-    if RIGHT_FIELD_PATTERN.search(description):
-        return 'right'
-    if CENTER_FIELD_PATTERN.search(description):
-        return 'center'
-
+    t = trajectory.lower()
+    if t in TRAJECTORY_GB:
+        return 'GB'
+    if t in TRAJECTORY_FB:
+        return 'FB'
+    if t in TRAJECTORY_LD:
+        return 'LD'
     return None
 
 
-def is_pull_hit(direction: str, batter_hand: str) -> bool:
-    """
-    Determine if a hit was to the pull side based on batter handedness.
-
-    - Right-handed batters pull to left field
-    - Left-handed batters pull to right field
-    - Switch hitters are treated based on their batting side for that at-bat
-    """
-    if not direction or not batter_hand:
-        return False
-
-    if batter_hand == 'R':
-        return direction == 'left'
-    elif batter_hand == 'L':
-        return direction == 'right'
-    # For switch hitters (S), we can't determine pull side without knowing
-    # which side they were batting from. We'll treat them as unknown.
-    return False
-
-
-def classify_batted_ball(result: str, event_type: str, description: str = '') -> Optional[str]:
-    """
-    Classify a batted ball as GB, FB, LD, or None (if not classifiable).
-
-    Returns:
-        'GB' for ground ball, 'FB' for fly ball, 'LD' for line drive,
-        None if can't be classified (strikeouts, walks, hits without trajectory info)
-    """
+def classify_batted_ball_from_result(result: str, event_type: str, description: str = '') -> Optional[str]:
+    """Classify using result text and description (fallback method)."""
     if not result:
         return None
 
-    # Check result text for out classification
     if result in GROUNDBALL_RESULTS:
         return 'GB'
     if result in FLYBALL_RESULTS:
@@ -138,7 +138,7 @@ def classify_batted_ball(result: str, event_type: str, description: str = '') ->
     if event_type == 'home_run':
         return 'FB'
 
-    # For hits (single, double, triple), parse description for trajectory
+    # For hits, parse description for trajectory
     if event_type in HIT_EVENTS and description:
         desc_lower = description.lower()
         if 'ground ball' in desc_lower:
@@ -151,11 +151,36 @@ def classify_batted_ball(result: str, event_type: str, description: str = '') ->
     return None
 
 
+def determine_pull_from_coordinates(coord_x: Optional[float], batter_hand: str) -> Optional[bool]:
+    """
+    Determine if a ball in play was pulled using hit coordinates.
+
+    The coordinate system has x≈125 as dead center. Values <100 are the
+    right field side, values >150 are the left field side.
+    Center (100-150) is not considered pull or oppo.
+
+    Returns True if pull, False if oppo, None if center or unknown.
+    """
+    if coord_x is None or not batter_hand or batter_hand == 'S':
+        return None
+
+    if PULL_CENTER_LEFT <= coord_x <= PULL_CENTER_RIGHT:
+        return None  # Center, not pull or oppo
+
+    if batter_hand == 'R':
+        # Right-handed batters pull to the left field side (x > 150)
+        return coord_x > PULL_CENTER_RIGHT
+    elif batter_hand == 'L':
+        # Left-handed batters pull to the right field side (x < 100)
+        return coord_x < PULL_CENTER_LEFT
+
+    return None
+
+
 def is_ball_in_play(event_type: str) -> bool:
     """Check if the at-bat resulted in a ball in play."""
     if not event_type:
         return False
-    # BIP = not a strikeout, walk, or HBP
     return event_type not in STRIKEOUT_EVENTS and event_type not in WALK_EVENTS
 
 
@@ -170,15 +195,19 @@ class PlayerAdvancedStats:
         self.home_runs = 0  # Subset of fly balls
 
         # Pull stats tracking
-        # All balls in play with known direction
         self.bip_with_direction = 0
         self.pull_hits = 0
-        # Fly balls, line drives, and pop-ups with known direction (for Pull-Air%)
         self.air_balls_with_direction = 0
         self.pull_air_balls = 0
 
-        # Pitch count tracking (for future use if pitch-level data becomes available)
+        # Pitch-level stats (from individual pitch call codes)
         self.total_pitches = 0
+        self.swings = 0
+        self.contacts = 0
+        self.called_strikes_whiffs = 0  # CSW
+
+        # Whether we have pitch-level data
+        self.has_pitch_data = False
 
         # Split tracking
         self.vs_left = PlayerAdvancedStats.__new__(PlayerAdvancedStats) if not hasattr(self, '_is_split') else None
@@ -203,6 +232,10 @@ class PlayerAdvancedStats:
         self.air_balls_with_direction = 0
         self.pull_air_balls = 0
         self.total_pitches = 0
+        self.swings = 0
+        self.contacts = 0
+        self.called_strikes_whiffs = 0
+        self.has_pitch_data = False
         self.vs_left = None
         self.vs_right = None
 
@@ -211,12 +244,23 @@ class PlayerAdvancedStats:
         event_type = at_bat.get('eventType', '')
         result = at_bat.get('result', '')
         description = at_bat.get('description', '')
-        pitch_count = at_bat.get('pitchCount', 0)
-        balls = at_bat.get('balls', 0)
-        strikes = at_bat.get('strikes', 0)
+        pitches = at_bat.get('pitches', [])
 
-        # Batted ball classification
-        bb_type = classify_batted_ball(result, event_type, description)
+        # --- Batted ball classification ---
+        # Prefer hitData.trajectory from pitch-level data (last pitch)
+        bb_type = None
+        trajectory = None
+        coord_x = None
+        if pitches:
+            last_pitch = pitches[-1]
+            trajectory = last_pitch.get('trajectory')
+            coord_x = last_pitch.get('coordX')
+            bb_type = classify_batted_ball_from_trajectory(trajectory)
+
+        # Fallback to result/description parsing
+        if bb_type is None:
+            bb_type = classify_batted_ball_from_result(result, event_type, description)
+
         if bb_type == 'GB':
             self.ground_balls += 1
         elif bb_type == 'FB':
@@ -226,42 +270,44 @@ class PlayerAdvancedStats:
         elif bb_type == 'LD':
             self.line_drives += 1
 
-        # Pull stats tracking - only for batters (not pitchers)
-        # Check if this is a ball in play and we can determine direction
+        # --- Pull stats ---
         if is_ball_in_play(event_type) and batter_hand and batter_hand != 'S':
-            direction = parse_hit_direction(description)
-            if direction:
-                # Track all BIP with direction for Pull%
+            # Prefer coordinate-based pull detection
+            is_pull = determine_pull_from_coordinates(coord_x, batter_hand)
+
+            if is_pull is not None:
                 self.bip_with_direction += 1
-                if is_pull_hit(direction, batter_hand):
+                if is_pull:
                     self.pull_hits += 1
 
-                # Track air balls (FB + LD + Pop Out) for Pull-Air%
-                # Air balls = fly balls, line drives, pop-ups (not ground balls)
-                is_air_ball = bb_type in ('FB', 'LD') or result == 'Pop Out'
-                # Also include hits that went to outfield (line drives and fly balls as hits)
-                # We detect these by checking if the description mentions outfielders
-                if is_air_ball or (event_type in HIT_EVENTS and direction in ('left', 'right', 'center')):
-                    # For hits, we can infer air ball if it went to an outfielder
-                    if event_type in HIT_EVENTS:
-                        # Check if description mentions outfielder or indicates air ball trajectory
-                        desc_lower = description.lower()
-                        is_fly_hit = 'line drive' in desc_lower or 'flies' in desc_lower
-                        is_to_outfielder = any(pos in desc_lower for pos in
-                            ['left fielder', 'center fielder', 'right fielder'])
-                        if is_fly_hit or is_to_outfielder:
-                            self.air_balls_with_direction += 1
-                            if is_pull_hit(direction, batter_hand):
-                                self.pull_air_balls += 1
-                    else:
-                        # Classified outs (FB, LD, Pop Out)
-                        self.air_balls_with_direction += 1
-                        if is_pull_hit(direction, batter_hand):
-                            self.pull_air_balls += 1
+                # Track air balls for Pull-Air%
+                is_air = bb_type in ('FB', 'LD')
+                # Also use trajectory if available
+                if not is_air and trajectory:
+                    is_air = trajectory.lower() in ('fly_ball', 'line_drive', 'popup')
+                if is_air:
+                    self.air_balls_with_direction += 1
+                    if is_pull:
+                        self.pull_air_balls += 1
 
-        # Track total pitches
-        if pitch_count > 0:
-            self.total_pitches += pitch_count
+        # --- Pitch-level stats ---
+        if pitches:
+            self.has_pitch_data = True
+            for p in pitches:
+                code = p.get('call', '')
+                if code in PITCH_CODES:
+                    self.total_pitches += 1
+                    if code in SWING_CODES:
+                        self.swings += 1
+                    if code in CONTACT_CODES:
+                        self.contacts += 1
+                    if code in CSW_CODES:
+                        self.called_strikes_whiffs += 1
+        else:
+            # Legacy data without pitch-level detail: only count total pitches
+            pitch_count = at_bat.get('pitchCount', 0)
+            if pitch_count > 0:
+                self.total_pitches += pitch_count
 
         # Track splits by opponent hand
         if opponent_hand == 'L' and self.vs_left is not None:
@@ -296,17 +342,18 @@ class PlayerAdvancedStats:
 
         # Pull stats (batters only)
         if is_batter:
-            # Pull% - percentage of all BIP hit to the pull side
             if self.bip_with_direction >= min_direction:
                 stats['Pull%'] = round(self.pull_hits / self.bip_with_direction, 3)
 
-            # Pull-Air% - percentage of fly balls and line drives hit to the pull side
             if self.air_balls_with_direction >= min_direction:
                 stats['Pull-Air%'] = round(self.pull_air_balls / self.air_balls_with_direction, 3)
 
-        # Note: Swing%, Contact%, and CSW% removed because they cannot be
-        # accurately calculated from at-bat-level data (would need individual
-        # pitch-level data to distinguish called strikes from swinging strikes).
+        # Plate discipline stats (only when pitch-level data is available)
+        if self.has_pitch_data and self.total_pitches >= min_pitches:
+            stats['Swing%'] = round(self.swings / self.total_pitches, 3)
+            if self.swings > 0:
+                stats['Contact%'] = round(self.contacts / self.swings, 3)
+            stats['CSW%'] = round(self.called_strikes_whiffs / self.total_pitches, 3)
 
         return stats
 
@@ -383,15 +430,11 @@ def process_games_for_stats(games: list[dict]) -> tuple[dict, dict, dict, dict]:
 
             if batter_id:
                 bid = str(batter_id)
-                # For batters, opponent hand is the pitcher's hand
-                # Pass batter_hand for pull stats calculation
                 batter_stats[bid].add_at_bat(at_bat, pitcher_hand, batter_hand)
                 batter_stats_by_level[bid][level].add_at_bat(at_bat, pitcher_hand, batter_hand)
 
             if pitcher_id:
                 pid = str(pitcher_id)
-                # For pitchers, opponent hand is the batter's hand
-                # Don't pass batter_hand (no pull stats for pitchers)
                 pitcher_stats[pid].add_at_bat(at_bat, batter_hand, None)
                 pitcher_stats_by_level[pid][level].add_at_bat(at_bat, batter_hand, None)
 
@@ -407,7 +450,6 @@ def process_games_per_game(games: list[dict]) -> tuple[dict, dict]:
         - batter_per_game: dict mapping player_id to {gamePk: PlayerAdvancedStats}
         - pitcher_per_game: dict mapping player_id to {gamePk: PlayerAdvancedStats}
     """
-    # Nested: player_id -> gamePk -> PlayerAdvancedStats
     batter_per_game: dict[str, dict[int, PlayerAdvancedStats]] = defaultdict(lambda: defaultdict(PlayerAdvancedStats))
     pitcher_per_game: dict[str, dict[int, PlayerAdvancedStats]] = defaultdict(lambda: defaultdict(PlayerAdvancedStats))
 
@@ -464,13 +506,13 @@ def save_monthly_stats(data: dict, year: int, month: int) -> None:
 def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dict, stat_type: str,
                                   level_stats: dict[str, dict] = None) -> None:
     """Update a player's data with advanced stats, splits, and per-level PBP stats."""
-    # Get the appropriate stats dict (batting or pitching)
     stats_key = 'batting' if stat_type == 'batting' else 'pitching'
 
     if stats_key not in player_data:
         player_data[stats_key] = {}
 
-    # Remove stale PBP stats that are no longer calculated
+    # Remove stale PBP stats that may be from old inaccurate calculations
+    # (they'll be re-added below if pitch-level data is available)
     stale_keys = ['Swing%', 'Contact%', 'CSW%', 'Whiff%']
     for key in stale_keys:
         player_data[stats_key].pop(key, None)
@@ -491,8 +533,10 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
                 player_data[splits_key][split_name] = split_stats
         # Clean stale stats from existing splits
         for split_name in list(player_data[splits_key].keys()):
-            for key in stale_keys:
-                player_data[splits_key][split_name].pop(key, None) if isinstance(player_data[splits_key][split_name], dict) else None
+            split_data = player_data[splits_key].get(split_name)
+            if isinstance(split_data, dict):
+                for key in stale_keys:
+                    split_data.pop(key, None)
 
     # Add per-level PBP stats
     if level_stats:
@@ -572,6 +616,20 @@ def calculate_for_month(year: int, month: int) -> int:
 
     logger.info(f"Processing {len(games)} games")
 
+    # Check if pitch-level data is available
+    has_pitch_data = False
+    for game in games[:5]:
+        for ab in game.get('atBats', [])[:3]:
+            if ab.get('pitches'):
+                has_pitch_data = True
+                break
+        if has_pitch_data:
+            break
+    if has_pitch_data:
+        logger.info("Pitch-level data detected (call codes, hitData available)")
+    else:
+        logger.info("Legacy PBP data (at-bat level only, no Swing%/Contact%/CSW%)")
+
     # Calculate stats from PBP (monthly aggregates)
     batter_stats, pitcher_stats, batter_by_level, pitcher_by_level = process_games_for_stats(games)
 
@@ -600,8 +658,6 @@ def calculate_for_month(year: int, month: int) -> int:
         if player_id in players:
             update_player_advanced_stats(players[player_id], adv_stats, splits, 'batting', level_stats)
             updated_count += 1
-        # Note: We only update existing players, not create new ones
-        # New players come from fetch_stats_by_date.py
 
     # Update pitchers
     for player_id, stats_acc in pitcher_stats.items():
