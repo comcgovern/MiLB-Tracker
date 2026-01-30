@@ -77,7 +77,6 @@ export interface BattingStats {
   'FB%'?: number;
   'LD%'?: number;
   'HR/FB'?: number;
-  'Hard%'?: number;
 
   // Pull/Center/Oppo Stats
   'Pull%'?: number;

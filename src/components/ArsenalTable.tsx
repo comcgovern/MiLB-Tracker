@@ -26,7 +26,6 @@ const PITCH_ORDER: string[] = ['FF', 'SI', 'FC', 'FT', 'SL', 'SV', 'ST', 'CU', '
 
 interface ArsenalTableProps {
   arsenal: Record<string, PitchArsenalEntry>;
-  playerName: string;
 }
 
 function formatVal(val: number | undefined, decimals: number = 1): string {
@@ -39,7 +38,7 @@ function formatPct(val: number | undefined): string {
   return (val * 100).toFixed(1) + '%';
 }
 
-export function ArsenalTable({ arsenal, playerName }: ArsenalTableProps) {
+export function ArsenalTable({ arsenal }: ArsenalTableProps) {
   // Sort pitch types by usage order
   const sortedPitches = Object.entries(arsenal).sort(([a], [b]) => {
     const ai = PITCH_ORDER.indexOf(a);
