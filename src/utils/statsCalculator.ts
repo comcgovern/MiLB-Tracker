@@ -153,6 +153,51 @@ export function aggregateBattingStats(games: GameLogEntry[]): BattingStats | und
     totals['wRC+'] = Math.round(wrcPlus);
   }
 
+  // PBP-derived stats: aggregate using appropriate weighting
+  // Sum BIP for downstream use
+  let totalBIP = 0;
+  for (const game of games) {
+    const bip = (game.stats as BattingStats)?.BIP;
+    if (typeof bip === 'number') totalBIP += bip;
+  }
+  if (totalBIP > 0) totals.BIP = totalBIP;
+
+  // BIP-weighted stats (batted ball rates)
+  for (const stat of ['GB%', 'FB%', 'LD%', 'HR/FB'] as const) {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const game of games) {
+      const s = game.stats as BattingStats;
+      const val = s?.[stat];
+      const weight = s?.BIP ?? 0;
+      if (typeof val === 'number' && weight > 0) {
+        weightedSum += val * weight;
+        totalWeight += weight;
+      }
+    }
+    if (totalWeight > 0) {
+      totals[stat] = Math.round((weightedSum / totalWeight) * 1000) / 1000;
+    }
+  }
+
+  // PA-weighted stats (plate discipline)
+  for (const stat of ['Swing%', 'Contact%'] as const) {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const game of games) {
+      const s = game.stats as BattingStats;
+      const val = s?.[stat];
+      const weight = s?.PA ?? 0;
+      if (typeof val === 'number' && weight > 0) {
+        weightedSum += val * weight;
+        totalWeight += weight;
+      }
+    }
+    if (totalWeight > 0) {
+      totals[stat] = Math.round((weightedSum / totalWeight) * 1000) / 1000;
+    }
+  }
+
   return totals;
 }
 
@@ -232,6 +277,51 @@ export function aggregatePitchingStats(games: GameLogEntry[]): PitchingStats | u
 
   if (so > 0 && bb > 0) {
     totals['K/BB'] = Math.round((so / bb) * 100) / 100;
+  }
+
+  // PBP-derived stats: aggregate using appropriate weighting
+  // Sum BIP for downstream use
+  let totalBIP = 0;
+  for (const game of games) {
+    const bip = (game.stats as PitchingStats)?.BIP;
+    if (typeof bip === 'number') totalBIP += bip;
+  }
+  if (totalBIP > 0) totals.BIP = totalBIP;
+
+  // BIP-weighted stats (batted ball rates)
+  for (const stat of ['GB%', 'FB%', 'LD%', 'HR/FB'] as const) {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const game of games) {
+      const s = game.stats as PitchingStats;
+      const val = s?.[stat];
+      const weight = s?.BIP ?? 0;
+      if (typeof val === 'number' && weight > 0) {
+        weightedSum += val * weight;
+        totalWeight += weight;
+      }
+    }
+    if (totalWeight > 0) {
+      totals[stat] = Math.round((weightedSum / totalWeight) * 1000) / 1000;
+    }
+  }
+
+  // IP-weighted stats (pitch-level metrics)
+  for (const stat of ['Swing%', 'Contact%', 'CSW%'] as const) {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const game of games) {
+      const s = game.stats as PitchingStats;
+      const val = s?.[stat];
+      const rawIP = s?.IP ?? 0;
+      if (typeof val === 'number' && rawIP > 0) {
+        weightedSum += val * rawIP;
+        totalWeight += rawIP;
+      }
+    }
+    if (totalWeight > 0) {
+      totals[stat] = Math.round((weightedSum / totalWeight) * 1000) / 1000;
+    }
   }
 
   // FIP = ((13*HR) + (3*(BB+HBP)) - (2*SO)) / IP + FIP constant
