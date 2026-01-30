@@ -100,12 +100,55 @@ GROUNDBALL_RESULTS = {
 FLYBALL_RESULTS = {'Flyout', 'Pop Out', 'Sac Fly'}
 LINEDRIVE_RESULTS = {'Lineout'}
 
-# Pull% coordinate thresholds
-# Coordinates are centered at x≈125 for dead center from home plate's perspective
-# Values <100 are right field side, values >150 are left field side
-# Center is roughly 100-150
-PULL_CENTER_LEFT = 100   # Below this = right field side
-PULL_CENTER_RIGHT = 150  # Above this = left field side
+# Pull/Center/Oppo spray angle calculation constants (from FanGraphs methodology)
+HOME_PLATE_X = 125.42
+HOME_PLATE_Y = 198.27
+
+# Trajectory-specific thresholds for pull/center/oppo classification
+# Ground balls have a wider "pull" zone than air balls
+GB_PULL_THRESHOLD = -7.5    # spray_angle < this = Pull for GB
+GB_OPPO_THRESHOLD = 5.0     # spray_angle > this = Oppo for GB
+AIR_PULL_THRESHOLD = -22.0   # spray_angle < this = Pull for FB/LD/popup
+AIR_OPPO_THRESHOLD = 10.0    # spray_angle > this = Oppo for FB/LD/popup
+
+
+def calculate_spray_angle(coord_x: float, coord_y: float) -> float:
+    """Calculate spray angle from hit coordinates using Zimmerman method."""
+    import math
+    coord_y = abs(coord_y)  # Ensure positive Y value
+    denom = HOME_PLATE_Y - coord_y
+    if denom == 0:
+        denom = 0.001  # Avoid division by zero
+    return round(math.atan((coord_x - HOME_PLATE_X) / denom) * 180 / math.pi * 0.75, 1)
+
+
+def classify_direction(spray_angle: float, trajectory: Optional[str], batter_hand: str) -> Optional[str]:
+    """
+    Classify a batted ball as Pull, Center, or Oppo using spray angle and trajectory.
+
+    Uses trajectory-specific thresholds matching FanGraphs methodology.
+    Returns 'Pull', 'Center', or 'Oppo', or None if data insufficient.
+    """
+    if batter_hand not in ('L', 'R'):
+        return None
+
+    # Flip angle for left-handed batters
+    adjusted_angle = -spray_angle if batter_hand == 'L' else spray_angle
+
+    # Apply trajectory-specific thresholds
+    if trajectory and trajectory.lower() == 'ground_ball':
+        pull_threshold = GB_PULL_THRESHOLD
+        oppo_threshold = GB_OPPO_THRESHOLD
+    else:  # fly_ball, line_drive, popup, or unknown -> use air ball thresholds
+        pull_threshold = AIR_PULL_THRESHOLD
+        oppo_threshold = AIR_OPPO_THRESHOLD
+
+    if adjusted_angle < pull_threshold:
+        return 'Pull'
+    elif adjusted_angle > oppo_threshold:
+        return 'Oppo'
+    else:
+        return 'Center'
 
 
 def classify_batted_ball_from_trajectory(trajectory: Optional[str]) -> Optional[str]:
@@ -151,32 +194,6 @@ def classify_batted_ball_from_result(result: str, event_type: str, description: 
     return None
 
 
-def determine_pull_from_coordinates(coord_x: Optional[float], batter_hand: str) -> Optional[bool]:
-    """
-    Determine if a ball in play was pulled using hit coordinates.
-
-    The coordinate system has x≈125 as dead center. Values <100 are the
-    right field side, values >150 are the left field side.
-    Center (100-150) is not considered pull or oppo.
-
-    Returns True if pull, False if oppo, None if center or unknown.
-    """
-    if coord_x is None or not batter_hand or batter_hand == 'S':
-        return None
-
-    if PULL_CENTER_LEFT <= coord_x <= PULL_CENTER_RIGHT:
-        return None  # Center, not pull or oppo
-
-    if batter_hand == 'R':
-        # Right-handed batters pull to the left field side (x > 150)
-        return coord_x > PULL_CENTER_RIGHT
-    elif batter_hand == 'L':
-        # Left-handed batters pull to the right field side (x < 100)
-        return coord_x < PULL_CENTER_LEFT
-
-    return None
-
-
 def is_ball_in_play(event_type: str) -> bool:
     """Check if the at-bat resulted in a ball in play."""
     if not event_type:
@@ -199,6 +216,14 @@ class PlayerAdvancedStats:
         self.swings = 0
         self.contacts = 0
         self.called_strikes_whiffs = 0  # CSW
+
+        # Pull/Center/Oppo counts (all BIP with valid coordinates)
+        self.pull_count = 0
+        self.center_count = 0
+        self.oppo_count = 0
+        # Pull on air balls only (FB + LD, for Pull-Air%)
+        self.air_pull_count = 0
+        self.air_balls_with_direction = 0  # FB + LD that have direction classification
 
         # Whether we have pitch-level data
         self.has_pitch_data = False
@@ -225,6 +250,11 @@ class PlayerAdvancedStats:
         self.swings = 0
         self.contacts = 0
         self.called_strikes_whiffs = 0
+        self.pull_count = 0
+        self.center_count = 0
+        self.oppo_count = 0
+        self.air_pull_count = 0
+        self.air_balls_with_direction = 0
         self.has_pitch_data = False
         self.vs_left = None
         self.vs_right = None
@@ -241,10 +271,12 @@ class PlayerAdvancedStats:
         bb_type = None
         trajectory = None
         coord_x = None
+        coord_y = None
         if pitches:
             last_pitch = pitches[-1]
             trajectory = last_pitch.get('trajectory')
             coord_x = last_pitch.get('coordX')
+            coord_y = last_pitch.get('coordY')
             bb_type = classify_batted_ball_from_trajectory(trajectory)
 
         # Fallback to result/description parsing
@@ -259,6 +291,23 @@ class PlayerAdvancedStats:
                 self.home_runs += 1
         elif bb_type == 'LD':
             self.line_drives += 1
+
+        # --- Pull/Center/Oppo classification using spray angle ---
+        if bb_type is not None and coord_x is not None and coord_y is not None and batter_hand:
+            spray_angle = calculate_spray_angle(coord_x, coord_y)
+            direction = classify_direction(spray_angle, trajectory, batter_hand)
+            if direction == 'Pull':
+                self.pull_count += 1
+            elif direction == 'Center':
+                self.center_count += 1
+            elif direction == 'Oppo':
+                self.oppo_count += 1
+
+            # Track air ball direction for Pull-Air%
+            if bb_type in ('FB', 'LD') and direction is not None:
+                self.air_balls_with_direction += 1
+                if direction == 'Pull':
+                    self.air_pull_count += 1
 
         # --- Pitch-level stats ---
         if pitches:
@@ -309,6 +358,17 @@ class PlayerAdvancedStats:
             # HR/FB rate
             if self.fly_balls > 0:
                 stats['HR/FB'] = round(self.home_runs / self.fly_balls, 3)
+
+        # Pull/Center/Oppo rates (among BIP with direction data)
+        total_with_direction = self.pull_count + self.center_count + self.oppo_count
+        if total_with_direction >= min_bip:
+            stats['Pull%'] = round(self.pull_count / total_with_direction, 3)
+            stats['Center%'] = round(self.center_count / total_with_direction, 3)
+            stats['Oppo%'] = round(self.oppo_count / total_with_direction, 3)
+
+        # Pull-Air% (pull rate among FB + LD only)
+        if self.air_balls_with_direction >= min_bip:
+            stats['Pull-Air%'] = round(self.air_pull_count / self.air_balls_with_direction, 3)
 
         # Plate discipline stats (only when pitch-level data is available)
         if self.has_pitch_data and self.total_pitches >= min_pitches:
@@ -475,7 +535,7 @@ def update_player_advanced_stats(player_data: dict, adv_stats: dict, splits: dic
 
     # Remove stale PBP stats that may be from old inaccurate calculations
     # (they'll be re-added below if pitch-level data is available)
-    stale_keys = ['Swing%', 'Contact%', 'CSW%', 'Whiff%', 'Pull%', 'Pull-Air%']
+    stale_keys = ['Swing%', 'Contact%', 'CSW%', 'Whiff%', 'Pull%', 'Pull-Air%', 'Center%', 'Oppo%']
     for key in stale_keys:
         player_data[stats_key].pop(key, None)
 
@@ -540,7 +600,7 @@ def inject_per_game_stats(players: dict, batter_per_game: dict, pitcher_per_game
                 # Inject PBP stats into the game's stats dict
                 stats = log_entry.get('stats', {})
                 # Remove stale keys
-                for key in ['Pull%', 'Pull-Air%']:
+                for key in ['Pull%', 'Pull-Air%', 'Center%', 'Oppo%']:
                     stats.pop(key, None)
                 for key, value in per_game.items():
                     if value is not None:
