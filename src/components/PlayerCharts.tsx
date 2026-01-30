@@ -52,7 +52,6 @@ const PITCHER_METRICS: ChartMetric[] = [
   { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => v.toFixed(3), pbpWeightKey: 'BIP' },
   { key: 'CSW%', label: 'CSW%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'IP' },
-  { key: 'Whiff%', label: 'Whiff%', color: '#be185d', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'IP' },
 ];
 
 // Rolling window sizes
@@ -564,53 +563,61 @@ function calculateRollingValue(
       return totals.BB / totals.PA;
     }
 
-    // PBP-derived stats: use BIP-weighted average of per-game values
-    if (['Swing%', 'Contact%', 'GB%', 'Pull-Air%', 'HR/FB'].includes(metric)) {
+    // PBP-derived stats: use appropriate weighting
+    if (['GB%', 'Pull-Air%', 'HR/FB'].includes(metric)) {
       return calculateWeightedAverageFromGames(games, metric, 'BIP');
+    }
+    if (['Swing%', 'Contact%'].includes(metric)) {
+      return calculateWeightedAverageFromGames(games, metric, 'PA');
     }
   } else {
     // Pitcher rate stats
     const totals = games.reduce((acc, game) => {
       const stats = game.stats as PitchingStats;
-      // Estimate batters faced: IP * 3 + H + BB (approximation)
-      const bf = (stats?.IP ?? 0) * 3 + (stats?.H ?? 0) + (stats?.BB ?? 0);
+      // Convert baseball IP notation (5.2 = 5⅔) to outs
+      const rawIP = stats?.IP ?? 0;
+      const ipOuts = Math.floor(rawIP) * 3 + Math.round((rawIP - Math.floor(rawIP)) * 10);
       return {
-        IP: acc.IP + (stats?.IP ?? 0),
+        ipOuts: acc.ipOuts + ipOuts,
         ER: acc.ER + (stats?.ER ?? 0),
         H: acc.H + (stats?.H ?? 0),
         BB: acc.BB + (stats?.BB ?? 0),
         SO: acc.SO + (stats?.SO ?? 0),
         HBP: acc.HBP + (stats?.HBP ?? 0),
-        BF: acc.BF + bf,
       };
-    }, { IP: 0, ER: 0, H: 0, BB: 0, SO: 0, HBP: 0, BF: 0 });
+    }, { ipOuts: 0, ER: 0, H: 0, BB: 0, SO: 0, HBP: 0 });
 
-    if (metric === 'ERA' && totals.IP > 0) {
-      return (9 * totals.ER) / totals.IP;
+    // Convert total outs to real innings for rate calculations
+    const realIP = totals.ipOuts / 3;
+    // Batters faced ≈ outs + baserunners
+    const bf = totals.ipOuts + totals.H + totals.BB + totals.HBP;
+
+    if (metric === 'ERA' && realIP > 0) {
+      return (9 * totals.ER) / realIP;
     }
-    if (metric === 'WHIP' && totals.IP > 0) {
-      return (totals.H + totals.BB) / totals.IP;
+    if (metric === 'WHIP' && realIP > 0) {
+      return (totals.H + totals.BB) / realIP;
     }
-    if (metric === 'K/9' && totals.IP > 0) {
-      return (9 * totals.SO) / totals.IP;
+    if (metric === 'K/9' && realIP > 0) {
+      return (9 * totals.SO) / realIP;
     }
-    if (metric === 'K%-BB%' && totals.BF > 0) {
-      const kPct = totals.SO / totals.BF;
-      const bbPct = totals.BB / totals.BF;
+    if (metric === 'K%-BB%' && bf > 0) {
+      const kPct = totals.SO / bf;
+      const bbPct = totals.BB / bf;
       return kPct - bbPct;
     }
-    if (metric === 'K%' && totals.BF > 0) {
-      return totals.SO / totals.BF;
+    if (metric === 'K%' && bf > 0) {
+      return totals.SO / bf;
     }
-    if (metric === 'BB%' && totals.BF > 0) {
-      return totals.BB / totals.BF;
+    if (metric === 'BB%' && bf > 0) {
+      return totals.BB / bf;
     }
 
     // PBP-derived stats: use appropriate weighting
     if (['GB%', 'HR/FB'].includes(metric)) {
       return calculateWeightedAverageFromGames(games, metric, 'BIP');
     }
-    if (['CSW%', 'Whiff%'].includes(metric)) {
+    if (['CSW%'].includes(metric)) {
       return calculateWeightedAverageFromGames(games, metric, 'IP');
     }
   }

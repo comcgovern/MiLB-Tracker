@@ -160,6 +160,8 @@ def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
     - pitcherId, pitcherName, pitcherHand
     - result, description
     - pitch count, outcome stats
+    - pitches: list of individual pitch events with call codes
+    - hitData: trajectory, coordinates for batted balls
     """
     at_bats = []
     game_pk = game_info.get('gamePk')
@@ -210,21 +212,48 @@ def extract_at_bats(pbp_data: dict, game_info: dict) -> list[dict]:
             'isOut': result.get('isOut', False),
         }
 
-        # Extract pitch data if available
-        pitches = play.get('playEvents', [])
-        pitch_count = sum(1 for p in pitches if p.get('isPitch', False))
-        at_bat['pitchCount'] = pitch_count
+        # Extract individual pitch events
+        play_events = play.get('playEvents', [])
+        pitches = []
+        for event in play_events:
+            if not event.get('isPitch', False):
+                continue
 
-        # Count strikes and balls
+            pitch = {}
+            # Call code (e.g., 'B'=ball, 'C'=called strike, 'S'=swinging strike, 'F'=foul, etc.)
+            details = event.get('details', {})
+            call = details.get('call', {})
+            pitch['call'] = call.get('code', '')
+            pitch['callDesc'] = call.get('description', '')
+
+            # Hit data (trajectory, coordinates) - only on final pitch if ball in play
+            hit_data = event.get('hitData', {})
+            if hit_data:
+                trajectory = hit_data.get('trajectory')
+                if trajectory:
+                    pitch['trajectory'] = trajectory
+                coords = hit_data.get('coordinates', {})
+                coord_x = coords.get('coordX')
+                coord_y = coords.get('coordY')
+                if coord_x is not None:
+                    pitch['coordX'] = coord_x
+                if coord_y is not None:
+                    pitch['coordY'] = coord_y
+
+            pitches.append(pitch)
+
+        at_bat['pitchCount'] = len(pitches)
+        at_bat['pitches'] = pitches
+
+        # Also store aggregate ball/strike counts for backward compatibility
         strikes = 0
         balls = 0
-        for pitch in pitches:
-            if pitch.get('isPitch'):
-                call = pitch.get('details', {}).get('call', {}).get('code', '')
-                if call in ['S', 'C', 'F', 'T', 'L', 'M', 'O', 'Q', 'R', 'W']:
-                    strikes += 1
-                elif call in ['B', 'I', 'P', 'V']:
-                    balls += 1
+        for p in pitches:
+            code = p.get('call', '')
+            if code in ('S', 'C', 'F', 'T', 'L', 'M', 'O', 'Q', 'R', 'W'):
+                strikes += 1
+            elif code in ('B', 'I', 'P', 'V'):
+                balls += 1
 
         at_bat['strikes'] = strikes
         at_bat['balls'] = balls
