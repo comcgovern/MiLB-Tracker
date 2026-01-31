@@ -334,7 +334,7 @@ function SplitsTab({ gameLog, isBatter, playerStats }: SplitsTabProps) {
   const handednessSplits = isBatter ? playerStats?.battingSplits : playerStats?.pitchingSplits;
   const vsLStats = handednessSplits?.vsL;
   const vsRStats = handednessSplits?.vsR;
-  const hasHandedness = !!(vsLStats?.PA || vsRStats?.PA);
+  const hasHandedness = !!((vsLStats as BattingStats | undefined)?.PA || (vsRStats as BattingStats | undefined)?.PA);
 
   // Batting stat columns for home/away splits (game-log derived)
   const battingColumns: { key: keyof BattingStats; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
