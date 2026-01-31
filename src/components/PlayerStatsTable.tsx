@@ -350,9 +350,6 @@ export function PlayerStatsTable({
                           } else {
                             value = stats?.[col.key as keyof typeof stats] as number | undefined;
                           }
-                        } else if (savantPitcherKeys.includes(col.key) && type === 'pitcher' && rowStatcast?.pit) {
-                          // Savant-only metrics (e.g. Whiff%) shown on non-statcast tabs
-                          value = rowStatcast.pit[col.key as keyof typeof rowStatcast.pit] as number | undefined;
                         } else {
                           value = stats?.[col.key as keyof typeof stats] as number | undefined;
                         }
