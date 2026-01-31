@@ -1,0 +1,16 @@
+{
+  "year": 2025,
+  "updated": "2026-01-31T02:02:59.720916",
+  "months": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "coverage": {
+    "AAA": "All Triple-A games",
+    "A": "Florida State League (Single-A)"
+  }
+}
