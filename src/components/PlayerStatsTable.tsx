@@ -419,12 +419,28 @@ export function PlayerStatsTable({
                           ? getPercentileColor(pctile, col.key, type === 'batter' ? 'batting' : 'pitching')
                           : undefined;
 
+                        // Build tooltip
+                        const tooltip = (() => {
+                          if (pctile !== undefined) {
+                            const ord = pctile === 1 || pctile % 10 === 1 && pctile !== 11 ? 'st'
+                              : pctile === 2 || pctile % 10 === 2 && pctile !== 12 ? 'nd'
+                              : pctile === 3 || pctile % 10 === 3 && pctile !== 13 ? 'rd' : 'th';
+                            return `${pctile}${ord} percentile at ${playerLevel}`;
+                          }
+                          if ((viewMode === 'vsL' || viewMode === 'vsR') && value !== undefined) {
+                            const hand = viewMode === 'vsL' ? 'L' : 'R';
+                            const formatted = formatStatValue(value, col.format);
+                            return `${formatted} vs ${hand}`;
+                          }
+                          return undefined;
+                        })();
+
                         return (
                           <td
                             key={col.key}
                             className={`px-3 py-2 whitespace-nowrap text-sm text-right ${!pctColor ? (isTotal ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-900 dark:text-white') : ''}`}
                             style={pctColor ? { backgroundColor: pctColor.bg, color: pctColor.text } : undefined}
-                            title={pctile !== undefined ? `${pctile}th percentile at ${playerLevel}` : undefined}
+                            title={tooltip}
                           >
                             {showNA ? (
                               <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
