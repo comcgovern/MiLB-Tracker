@@ -243,6 +243,22 @@ def safe_int(val) -> Optional[int]:
         return None
 
 
+def is_barrel(ev: float, la: float) -> bool:
+    """Determine if a batted ball is a barrel using the Statcast definition.
+
+    A barrel requires exit velocity >= 98 mph. At exactly 98 mph, the launch
+    angle must be between 26-30 degrees. For each additional mph of EV above
+    98, the acceptable LA range expands by 2 degrees (1 degree on each side),
+    capped at a range of 8-50 degrees.
+    """
+    if ev < 98.0:
+        return False
+    excess = ev - 98.0
+    la_low = max(26.0 - excess, 8.0)
+    la_high = min(30.0 + excess, 50.0)
+    return la_low <= la <= la_high
+
+
 def aggregate_batter_statcast(records: list[dict]) -> dict:
     """
     Aggregate pitch-level records into batter Statcast metrics.
@@ -250,7 +266,7 @@ def aggregate_batter_statcast(records: list[dict]) -> dict:
     Metrics calculated:
     - EV (Exit Velocity): Average launch_speed on batted balls
     - LA (Launch Angle): Average launch_angle on batted balls
-    - Barrel%: Barrels / Batted Ball Events
+    - Barrel%: Barrels / Batted Ball Events (computed from EV/LA using Statcast barrel definition)
     - Hard%: Hard hit balls (95+ mph) / Batted Ball Events
     - GB%, FB%, LD%: Ground ball, fly ball, line drive rates
     - xBA, xSLG, xwOBA: Expected stats based on batted ball quality
@@ -276,7 +292,7 @@ def aggregate_batter_statcast(records: list[dict]) -> dict:
             batted_balls.append({
                 'ev': ev,
                 'la': la,
-                'barrel': str(rec.get('barrel', '0')) == '1',
+                'barrel': is_barrel(ev, la),
                 'bb_type': rec.get('bb_type', ''),
                 'xba': safe_float(rec.get('estimated_ba_using_speedangle')),
                 'xslg': safe_float(rec.get('estimated_slg_using_speedangle')),

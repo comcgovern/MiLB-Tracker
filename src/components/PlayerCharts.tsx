@@ -39,6 +39,7 @@ const BATTER_METRICS: ChartMetric[] = [
   { key: 'Contact%', label: 'Contact%', color: '#0891b2', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'GB%', label: 'GB%', color: '#ca8a04', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
   { key: 'HR/FB', label: 'HR/FB', color: '#9333ea', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
+  { key: 'Pull-Air%', label: 'Pull-Air%', color: '#e11d48', format: (v) => (v * 100).toFixed(1) + '%', pbpWeightKey: 'BIP' },
 ];
 
 const PITCHER_METRICS: ChartMetric[] = [

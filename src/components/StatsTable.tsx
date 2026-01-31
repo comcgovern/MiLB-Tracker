@@ -265,6 +265,7 @@ export function StatsTable() {
     statcast?: PlayerStatsData['statcast'];
     level?: MiLBLevel;  // undefined means it's a single-level player
     isTotal?: boolean;  // true for the MiLB total row
+    playerStatsData?: PlayerStatsData;  // Full stats data for splits access
   }
 
   const batters: PlayerRowWithLevel[] = [];
@@ -379,7 +380,9 @@ export function StatsTable() {
       for (const level of levels) {
         const levelStats = getStatsForLevel(playerStats, level, statType);
         // Only assign statcast data if it matches this level (avoid fill-down across levels)
-        const statcastLevel = playerStats?.statcast?.level;
+        // Map statcast level identifiers (from Baseball Savant) to MiLB level codes
+        const rawScLevel = playerStats?.statcast?.level?.toUpperCase();
+        const statcastLevel = rawScLevel === 'A' ? 'A+' : rawScLevel; // Savant 'a' maps to FSL (A+)
         const levelStatcast = (!statcastLevel || statcastLevel === level)
           ? playerStats?.statcast
           : undefined;
@@ -390,6 +393,7 @@ export function StatsTable() {
           statcast: levelStatcast,
           level,
           isTotal: false,
+          playerStatsData: playerStats,
         };
 
         if (isPitcher && !isBatter) {
@@ -425,6 +429,7 @@ export function StatsTable() {
         statcast: playerStats?.statcast,
         level: 'MiLB',
         isTotal: true,
+        playerStatsData: playerStats,
       };
 
       if (isPitcher && !isBatter) {
@@ -463,6 +468,7 @@ export function StatsTable() {
         statcast: playerStats?.statcast,
         level: displayLevel,
         isTotal: false,
+        playerStatsData: playerStats,
       };
 
       if (isPitcher && !isBatter) {

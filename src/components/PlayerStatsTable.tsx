@@ -12,6 +12,10 @@ import {
 import type { Player, BattingStats, PitchingStats, MiLBLevel, PlayerStatsData } from '../types';
 import type { DBTeamPlayer } from '../db';
 import type { SortOption } from '../hooks/useTeamPlayers';
+import { usePercentiles } from '../hooks/usePercentiles';
+import { getPercentile, getPercentileColor } from '../utils/percentileCalculator';
+
+export type StatsViewMode = 'standard' | 'percentile' | 'vsL' | 'vsR';
 
 interface PlayerRow {
   teamPlayer: DBTeamPlayer;
@@ -20,6 +24,7 @@ interface PlayerRow {
   statcast?: PlayerStatsData['statcast'];  // Statcast data for this player
   level?: MiLBLevel;  // The level for this row (undefined = use player.level)
   isTotal?: boolean;  // true for MiLB total rows
+  playerStatsData?: PlayerStatsData;  // Full player stats data (for splits access)
 }
 
 interface PlayerStatsTableProps {
@@ -44,9 +49,11 @@ export function PlayerStatsTable({
   currentSortOption = 'custom',
 }: PlayerStatsTableProps) {
   const [activeCategory, setActiveCategory] = useState<StatCategory>('standard');
+  const [viewMode, setViewMode] = useState<StatsViewMode>('standard');
   const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
   const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
   const dragCounter = useRef(0);
+  const { percentiles } = usePercentiles();
 
   // Check if any player in this table has Statcast data
   const anyHasStatcast = players.some((p) => p.player?.hasStatcast);
@@ -163,6 +170,32 @@ export function PlayerStatsTable({
           </span>
         </h3>
         <div className="flex flex-wrap items-center gap-2">
+          {/* View mode toggle */}
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            {([
+              { value: 'standard' as const, label: 'Stats' },
+              { value: 'percentile' as const, label: 'Percentile' },
+              { value: 'vsL' as const, label: 'vs L' },
+              { value: 'vsR' as const, label: 'vs R' },
+            ]).map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setViewMode(value)}
+                className={`
+                  px-2.5 py-1 text-xs font-medium border
+                  first:rounded-l-md last:rounded-r-md
+                  focus:z-10 focus:outline-none focus:ring-2 focus:ring-blue-500
+                  ${viewMode === value
+                    ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-800'
+                  }
+                `}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {/* Sort dropdown */}
           {onSortPlayers && (
             <select
@@ -247,7 +280,7 @@ export function PlayerStatsTable({
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-              {players.map(({ teamPlayer, player, stats, statcast: rowStatcast, level, isTotal }, index) => {
+              {players.map(({ teamPlayer, player, stats, statcast: rowStatcast, level, isTotal, playerStatsData }, index) => {
                 // Check if this is the first row for this player (for multi-level display)
                 const isFirstRowForPlayer = index === 0 || players[index - 1]?.teamPlayer.id !== teamPlayer.id;
                 // Check if next row is for same player (to avoid divider)
@@ -338,9 +371,22 @@ export function PlayerStatsTable({
                       </td>
                     ) : (
                       statColumns.map((col) => {
+                        // Determine which stats object to use based on view mode
+                        const effectiveStats = (() => {
+                          if (viewMode === 'vsL' || viewMode === 'vsR') {
+                            const splitsKey = viewMode === 'vsL' ? 'vsL' : 'vsR';
+                            if (playerStatsData) {
+                              const splits = type === 'batter' ? playerStatsData.battingSplits : playerStatsData.pitchingSplits;
+                              return (splits as Record<string, any>)?.[splitsKey] as typeof stats;
+                            }
+                            return undefined;
+                          }
+                          return stats;
+                        })();
+
                         let value: number | undefined;
 
-                        if (activeCategory === 'statcast') {
+                        if (activeCategory === 'statcast' && viewMode !== 'vsL' && viewMode !== 'vsR') {
                           // For the statcast category, pull Savant-specific metrics from
                           // the statcast block, falling back to PBP-derived stats
                           if (type === 'batter' && savantBatterKeys.includes(col.key) && rowStatcast?.bat) {
@@ -348,10 +394,10 @@ export function PlayerStatsTable({
                           } else if (type === 'pitcher' && savantPitcherKeys.includes(col.key) && rowStatcast?.pit) {
                             value = rowStatcast.pit[col.key as keyof typeof rowStatcast.pit] as number | undefined;
                           } else {
-                            value = stats?.[col.key as keyof typeof stats] as number | undefined;
+                            value = effectiveStats?.[col.key as keyof typeof effectiveStats] as number | undefined;
                           }
                         } else {
-                          value = stats?.[col.key as keyof typeof stats] as number | undefined;
+                          value = effectiveStats?.[col.key as keyof typeof effectiveStats] as number | undefined;
                         }
 
                         // For Statcast Savant-only metrics, show N/A if no statcast data
@@ -361,12 +407,24 @@ export function PlayerStatsTable({
                         const showNA =
                           activeCategory === 'statcast' &&
                           isSavantKey &&
-                          !rowStatcast;
+                          !rowStatcast &&
+                          viewMode !== 'vsL' && viewMode !== 'vsR';
+
+                        // Percentile coloring
+                        const playerLevel: MiLBLevel = level || player?.level || 'MiLB';
+                        const pctile = viewMode === 'percentile' && percentiles && value !== undefined
+                          ? getPercentile(percentiles, playerLevel, col.key, value, type === 'batter' ? 'batting' : 'pitching')
+                          : undefined;
+                        const pctColor = pctile !== undefined
+                          ? getPercentileColor(pctile, col.key, type === 'batter' ? 'batting' : 'pitching')
+                          : undefined;
 
                         return (
                           <td
                             key={col.key}
-                            className={`px-3 py-2 whitespace-nowrap text-sm text-right ${isTotal ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-900 dark:text-white'}`}
+                            className={`px-3 py-2 whitespace-nowrap text-sm text-right ${!pctColor ? (isTotal ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-900 dark:text-white') : ''}`}
+                            style={pctColor ? { backgroundColor: pctColor.bg, color: pctColor.text } : undefined}
+                            title={pctile !== undefined ? `${pctile}th percentile at ${playerLevel}` : undefined}
                           >
                             {showNA ? (
                               <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
