@@ -280,7 +280,7 @@ export function PlayerStatsTable({
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-              {players.map(({ teamPlayer, player, stats, statcast: rowStatcast, level, isTotal }, index) => {
+              {players.map(({ teamPlayer, player, stats, statcast: rowStatcast, level, isTotal, playerStatsData }, index) => {
                 // Check if this is the first row for this player (for multi-level display)
                 const isFirstRowForPlayer = index === 0 || players[index - 1]?.teamPlayer.id !== teamPlayer.id;
                 // Check if next row is for same player (to avoid divider)
@@ -375,9 +375,8 @@ export function PlayerStatsTable({
                         const effectiveStats = (() => {
                           if (viewMode === 'vsL' || viewMode === 'vsR') {
                             const splitsKey = viewMode === 'vsL' ? 'vsL' : 'vsR';
-                            const psd = players.find(p => p.teamPlayer.id === teamPlayer.id && p.level === level)?.playerStatsData;
-                            if (psd) {
-                              const splits = type === 'batter' ? psd.battingSplits : psd.pitchingSplits;
+                            if (playerStatsData) {
+                              const splits = type === 'batter' ? playerStatsData.battingSplits : playerStatsData.pitchingSplits;
                               return (splits as Record<string, any>)?.[splitsKey] as typeof stats;
                             }
                             return undefined;

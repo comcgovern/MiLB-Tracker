@@ -20,9 +20,10 @@ const MIN_IP = 10;
 
 // Stats where higher is worse (lower percentile = better)
 // For these, we invert the color scheme (blue = high/good, red = low/bad)
+// Stats where higher is always worse regardless of player type
+// Note: K% and BB% are NOT here because they differ by player type (handled separately)
 const INVERTED_STATS = new Set([
-  'K%', 'ERA', 'WHIP', 'BB/9', 'HR/9', 'FIP', 'xFIP', 'BABIP',
-  'BB%',  // For pitchers BB% is bad; for batters it's good - handled in getPercentile
+  'ERA', 'WHIP', 'BB/9', 'HR/9', 'FIP', 'xFIP',
 ]);
 
 // Stats where higher is better for batters but worse for pitchers
