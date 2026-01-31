@@ -74,10 +74,8 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
 
-    // Track level changes
-    const changes: { gameNum: number; date: string; fromLevel: MiLBLevel | null; toLevel: MiLBLevel }[] = [];
+    // Track unique levels
     const levelsSet = new Set<MiLBLevel>();
-    let previousLevel: MiLBLevel | null = null;
 
     const data = sortedGames.map((game, index) => {
       const currentLevel = game.level as MiLBLevel | undefined;
@@ -85,17 +83,6 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
       // Track unique levels
       if (currentLevel) {
         levelsSet.add(currentLevel);
-      }
-
-      // Detect level change
-      if (currentLevel && currentLevel !== previousLevel) {
-        changes.push({
-          gameNum: index + 1,
-          date: formatChartDate(game.date),
-          fromLevel: previousLevel,
-          toLevel: currentLevel,
-        });
-        previousLevel = currentLevel;
       }
 
       if (viewMode === 'game') {
@@ -146,6 +133,25 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
     const filteredData = viewMode === 'rolling'
       ? data.filter((d: { value: number | null }) => d.value !== null)
       : data;
+
+    // Calculate level changes from the FILTERED data to ensure references exist
+    const changes: { gameNum: number; date: string; fromLevel: MiLBLevel | null; toLevel: MiLBLevel }[] = [];
+    let previousLevel: MiLBLevel | null = null;
+
+    filteredData.forEach((point, index) => {
+      const currentLevel = point.level as MiLBLevel | undefined;
+
+      // Detect level change
+      if (currentLevel && currentLevel !== previousLevel) {
+        changes.push({
+          gameNum: index + 1,
+          date: point.name, // Use the actual name from filtered data
+          fromLevel: previousLevel,
+          toLevel: currentLevel,
+        });
+        previousLevel = currentLevel;
+      }
+    });
 
     return {
       chartData: filteredData,
