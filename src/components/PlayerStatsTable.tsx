@@ -155,14 +155,14 @@ export function PlayerStatsTable({
   return (
     <div className="mb-8">
       {/* Section Header */}
-      <div className="flex items-center justify-between mb-3 px-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-2">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           {title}
           <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
             ({uniquePlayerCount})
           </span>
         </h3>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Sort dropdown */}
           {onSortPlayers && (
             <select
@@ -350,6 +350,9 @@ export function PlayerStatsTable({
                           } else {
                             value = stats?.[col.key as keyof typeof stats] as number | undefined;
                           }
+                        } else if (savantPitcherKeys.includes(col.key) && type === 'pitcher' && rowStatcast?.pit) {
+                          // Savant-only metrics (e.g. Whiff%) shown on non-statcast tabs
+                          value = rowStatcast.pit[col.key as keyof typeof rowStatcast.pit] as number | undefined;
                         } else {
                           value = stats?.[col.key as keyof typeof stats] as number | undefined;
                         }

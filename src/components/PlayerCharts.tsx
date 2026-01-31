@@ -142,8 +142,13 @@ export function PlayerCharts({ gameLog, isBatter, leagueAverages }: PlayerCharts
       }
     });
 
+    // Filter out leading null values so the chart doesn't start with a blank gap
+    const filteredData = viewMode === 'rolling'
+      ? data.filter((d: { value: number | null }) => d.value !== null)
+      : data;
+
     return {
-      chartData: data,
+      chartData: filteredData,
       levelChanges: changes,
       levelsInData: Array.from(levelsSet) as MiLBLevel[]
     };
