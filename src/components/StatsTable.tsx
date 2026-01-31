@@ -380,7 +380,9 @@ export function StatsTable() {
       for (const level of levels) {
         const levelStats = getStatsForLevel(playerStats, level, statType);
         // Only assign statcast data if it matches this level (avoid fill-down across levels)
-        const statcastLevel = playerStats?.statcast?.level;
+        // Map statcast level identifiers (from Baseball Savant) to MiLB level codes
+        const rawScLevel = playerStats?.statcast?.level?.toUpperCase();
+        const statcastLevel = rawScLevel === 'A' ? 'A+' : rawScLevel; // Savant 'a' maps to FSL (A+)
         const levelStatcast = (!statcastLevel || statcastLevel === level)
           ? playerStats?.statcast
           : undefined;
