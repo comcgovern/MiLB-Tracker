@@ -228,6 +228,19 @@ class PlayerAdvancedStats:
         # Whether we have pitch-level data
         self.has_pitch_data = False
 
+        # Counting stats from at-bat outcomes (for splits)
+        self.pa = 0
+        self.ab = 0
+        self.hits = 0
+        self.doubles = 0
+        self.triples = 0
+        self.hr_count = 0  # Counting HR from event types (distinct from home_runs which is BIP subset)
+        self.bb = 0
+        self.so = 0
+        self.hbp = 0
+        self.sf = 0
+        self.rbi = 0
+
         # Split tracking
         self.vs_left = PlayerAdvancedStats.__new__(PlayerAdvancedStats) if not hasattr(self, '_is_split') else None
         self.vs_right = PlayerAdvancedStats.__new__(PlayerAdvancedStats) if not hasattr(self, '_is_split') else None
@@ -256,6 +269,17 @@ class PlayerAdvancedStats:
         self.air_pull_count = 0
         self.air_balls_with_direction = 0
         self.has_pitch_data = False
+        self.pa = 0
+        self.ab = 0
+        self.hits = 0
+        self.doubles = 0
+        self.triples = 0
+        self.hr_count = 0
+        self.bb = 0
+        self.so = 0
+        self.hbp = 0
+        self.sf = 0
+        self.rbi = 0
         self.vs_left = None
         self.vs_right = None
 
@@ -264,6 +288,51 @@ class PlayerAdvancedStats:
         event_type = at_bat.get('eventType', '')
         result = at_bat.get('result', '')
         description = at_bat.get('description', '')
+
+        # --- Counting stats from at-bat outcomes ---
+        # Every plate appearance counts as PA (except runner-related events)
+        if event_type and event_type not in ('runner_double_play', 'caught_stealing_2b',
+                                              'caught_stealing_3b', 'caught_stealing_home',
+                                              'stolen_base_2b', 'stolen_base_3b', 'stolen_base_home',
+                                              'pickoff_1b', 'pickoff_2b', 'pickoff_3b',
+                                              'wild_pitch', 'passed_ball', 'balk',
+                                              'other_advance', 'game_advisory'):
+            self.pa += 1
+            self.rbi += at_bat.get('rbi', 0)
+
+            # AB = PA - BB - HBP - SF - SH - catcher_interf
+            is_ab = True
+            if event_type in ('walk', 'intent_walk'):
+                self.bb += 1
+                is_ab = False
+            elif event_type == 'hit_by_pitch':
+                self.hbp += 1
+                is_ab = False
+            elif event_type in ('sac_fly', 'sac_fly_double_play'):
+                self.sf += 1
+                is_ab = False
+            elif event_type in ('sac_bunt', 'sac_bunt_double_play'):
+                is_ab = False
+            elif event_type == 'catcher_interf':
+                is_ab = False
+
+            if is_ab:
+                self.ab += 1
+
+            if event_type in STRIKEOUT_EVENTS:
+                self.so += 1
+            elif event_type == 'single':
+                self.hits += 1
+            elif event_type == 'double':
+                self.hits += 1
+                self.doubles += 1
+            elif event_type == 'triple':
+                self.hits += 1
+                self.triples += 1
+            elif event_type == 'home_run':
+                self.hits += 1
+                self.hr_count += 1
+
         pitches = at_bat.get('pitches', [])
 
         # --- Batted ball classification ---
@@ -379,15 +448,76 @@ class PlayerAdvancedStats:
 
         return stats
 
+    def get_counting_stats(self, is_batter: bool = True) -> dict:
+        """Get counting and rate stats derived from at-bat outcomes.
+
+        These are the traditional stats (AVG, OBP, SLG, etc.) computed from PBP event types.
+        Used primarily for handedness splits where game-log-level filtering isn't possible.
+        """
+        if self.pa == 0:
+            return {}
+
+        stats = {
+            'PA': self.pa,
+            'AB': self.ab,
+            'H': self.hits,
+            'HR': self.hr_count,
+            'BB': self.bb,
+            'SO': self.so,
+            'HBP': self.hbp,
+            'RBI': self.rbi,
+        }
+        if self.doubles > 0:
+            stats['2B'] = self.doubles
+        if self.triples > 0:
+            stats['3B'] = self.triples
+        if self.sf > 0:
+            stats['SF'] = self.sf
+
+        # Rate stats
+        if self.ab > 0:
+            stats['AVG'] = round(self.hits / self.ab, 3)
+            tb = self.hits + self.doubles + 2 * self.triples + 3 * self.hr_count
+            stats['SLG'] = round(tb / self.ab, 3)
+            stats['ISO'] = round(stats['SLG'] - stats['AVG'], 3)
+
+        if self.pa > 0:
+            stats['OBP'] = round((self.hits + self.bb + self.hbp) / self.pa, 3)
+            stats['BB%'] = round(self.bb / self.pa, 3)
+            stats['K%'] = round(self.so / self.pa, 3)
+
+            # wOBA
+            singles = self.hits - self.doubles - self.triples - self.hr_count
+            woba_num = (0.69 * self.bb + 0.72 * self.hbp + 0.88 * singles +
+                        1.24 * self.doubles + 1.56 * self.triples + 1.95 * self.hr_count)
+            stats['wOBA'] = round(woba_num / self.pa, 3)
+
+        if 'OBP' in stats and 'SLG' in stats:
+            stats['OPS'] = round(stats['OBP'] + stats['SLG'], 3)
+
+        return stats
+
     def get_split_stats(self, is_batter: bool = True) -> dict:
-        """Get stats broken down by opponent handedness."""
+        """Get stats broken down by opponent handedness.
+
+        Includes both PBP-derived advanced stats and counting/rate stats.
+        """
         splits = {}
+        # Use relaxed minimums for splits (smaller sample sizes expected)
+        split_min_bip = 5
+        split_min_pitches = 20
         if self.vs_left is not None:
-            vs_l = self.vs_left.get_stats(is_batter)
+            vs_l = self.vs_left.get_stats(is_batter, min_bip=split_min_bip, min_pitches=split_min_pitches)
+            counting_l = self.vs_left.get_counting_stats(is_batter)
+            if counting_l:
+                vs_l.update(counting_l)
             if vs_l:
                 splits['vsL'] = vs_l
         if self.vs_right is not None:
-            vs_r = self.vs_right.get_stats(is_batter)
+            vs_r = self.vs_right.get_stats(is_batter, min_bip=split_min_bip, min_pitches=split_min_pitches)
+            counting_r = self.vs_right.get_counting_stats(is_batter)
+            if counting_r:
+                vs_r.update(counting_r)
             if vs_r:
                 splits['vsR'] = vs_r
         return splits

@@ -6,6 +6,7 @@ import { formatStatValue } from '../config/statCategories';
 import { fetchCurrentSeasonStats } from '../utils/statsService';
 import { PlayerCharts } from './PlayerCharts';
 import { useLeagueAverages } from '../hooks/useLeagueAverages';
+import type { PlayerStatsData } from '../types';
 import {
   calculateAllSituationalSplits,
   hasHomeAwayData,
@@ -145,6 +146,7 @@ export function PlayerDetailModal({ player, onClose }: PlayerDetailModalProps) {
             <SplitsTab
               gameLog={gameLog}
               isBatter={isBatter}
+              playerStats={playerStats}
             />
           )}
           {activeTab === 'info' && (
@@ -319,15 +321,22 @@ function ChartsTab({ gameLog, isBatter, showLeagueAverages }: ChartsTabProps) {
 interface SplitsTabProps {
   gameLog: GameLogEntry[] | undefined;
   isBatter: boolean;
+  playerStats?: PlayerStatsData;
 }
 
-function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
+function SplitsTab({ gameLog, isBatter, playerStats }: SplitsTabProps) {
   const type = isBatter ? 'batting' : 'pitching';
   const splits = calculateAllSituationalSplits(gameLog, type);
   const gameCounts = getSituationalSplitGameCounts(gameLog);
   const hasHomeAway = hasHomeAwayData(gameLog);
 
-  // Batting stat columns for splits
+  // Get pre-computed handedness splits from stats data
+  const handednessSplits = isBatter ? playerStats?.battingSplits : playerStats?.pitchingSplits;
+  const vsLStats = handednessSplits?.vsL;
+  const vsRStats = handednessSplits?.vsR;
+  const hasHandedness = !!(vsLStats?.PA || vsRStats?.PA);
+
+  // Batting stat columns for home/away splits (game-log derived)
   const battingColumns: { key: keyof BattingStats; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
     { key: 'G', label: 'G' },
     { key: 'PA', label: 'PA' },
@@ -341,7 +350,7 @@ function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
     { key: 'wOBA', label: 'wOBA', format: 'decimal3' },
   ];
 
-  // Pitching stat columns for splits
+  // Pitching stat columns for home/away splits
   const pitchingColumns: { key: keyof PitchingStats; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
     { key: 'G', label: 'G' },
     { key: 'IP', label: 'IP', format: 'decimal2' },
@@ -352,6 +361,23 @@ function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
     { key: 'K%', label: 'K%', format: 'percent' },
     { key: 'BB%', label: 'BB%', format: 'percent' },
     { key: 'FIP', label: 'FIP', format: 'decimal2' },
+  ];
+
+  // Handedness split columns (from PBP counting stats)
+  const handednessColumns: { key: string; label: string; format?: 'decimal3' | 'decimal2' | 'percent' }[] = [
+    { key: 'PA', label: 'PA' },
+    { key: 'AB', label: 'AB' },
+    { key: 'H', label: 'H' },
+    { key: 'HR', label: 'HR' },
+    { key: 'BB', label: 'BB' },
+    { key: 'SO', label: 'K' },
+    { key: 'AVG', label: 'AVG', format: 'decimal3' },
+    { key: 'OBP', label: 'OBP', format: 'decimal3' },
+    { key: 'SLG', label: 'SLG', format: 'decimal3' },
+    { key: 'OPS', label: 'OPS', format: 'decimal3' },
+    { key: 'wOBA', label: 'wOBA', format: 'decimal3' },
+    { key: 'K%', label: 'K%', format: 'percent' },
+    { key: 'BB%', label: 'BB%', format: 'percent' },
   ];
 
   const columns = isBatter ? battingColumns : pitchingColumns;
@@ -388,6 +414,28 @@ function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
     </tr>
   );
 
+  const renderHandednessRow = (
+    label: string,
+    stats: Record<string, number> | undefined,
+  ) => (
+    <tr className="hover:bg-gray-50 dark:hover:bg-gray-800">
+      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+        {label}
+      </td>
+      {handednessColumns.map((col) => {
+        const value = stats?.[col.key];
+        return (
+          <td
+            key={col.key}
+            className="px-3 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white"
+          >
+            {formatValue(value, col.format)}
+          </td>
+        );
+      })}
+    </tr>
+  );
+
   if (!gameLog || gameLog.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500 dark:text-gray-400">
@@ -398,6 +446,42 @@ function SplitsTab({ gameLog, isBatter }: SplitsTabProps) {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Handedness Splits */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          {isBatter ? 'vs Pitcher Hand' : 'vs Batter Hand'}
+        </h3>
+        {hasHandedness ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    Split
+                  </th>
+                  {handednessColumns.map((col) => (
+                    <th
+                      key={col.key}
+                      className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {renderHandednessRow(isBatter ? 'vs LHP' : 'vs LHB', vsLStats as Record<string, number> | undefined)}
+                {renderHandednessRow(isBatter ? 'vs RHP' : 'vs RHB', vsRStats as Record<string, number> | undefined)}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+            Handedness split data not yet available. Requires play-by-play data processing.
+          </p>
+        )}
+      </div>
+
       {/* Home/Away Splits */}
       <div>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
