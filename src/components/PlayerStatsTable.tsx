@@ -419,20 +419,29 @@ export function PlayerStatsTable({
                           ? getPercentileColor(pctile, col.key, type === 'batter' ? 'batting' : 'pitching')
                           : undefined;
 
-                        // Build tooltip
+                        // Build tooltip and display value
                         const tooltip = (() => {
                           if (pctile !== undefined) {
-                            const ord = pctile === 1 || pctile % 10 === 1 && pctile !== 11 ? 'st'
-                              : pctile === 2 || pctile % 10 === 2 && pctile !== 12 ? 'nd'
-                              : pctile === 3 || pctile % 10 === 3 && pctile !== 13 ? 'rd' : 'th';
-                            return `${pctile}${ord} percentile at ${playerLevel}`;
+                            // In percentile view, tooltip shows the raw stat value
+                            return `${col.label}: ${formatStatValue(value, col.format)}`;
                           }
                           if ((viewMode === 'vsL' || viewMode === 'vsR') && value !== undefined) {
                             const hand = viewMode === 'vsL' ? 'L' : 'R';
-                            const formatted = formatStatValue(value, col.format);
-                            return `${formatted} vs ${hand}`;
+                            return `${col.label} vs ${hand}`;
                           }
                           return undefined;
+                        })();
+
+                        // In percentile view, show the percentile number in the cell
+                        const displayValue = (() => {
+                          if (showNA) return <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>;
+                          if (viewMode === 'percentile' && pctile !== undefined) {
+                            const ord = (pctile % 10 === 1 && pctile % 100 !== 11) ? 'st'
+                              : (pctile % 10 === 2 && pctile % 100 !== 12) ? 'nd'
+                              : (pctile % 10 === 3 && pctile % 100 !== 13) ? 'rd' : 'th';
+                            return `${pctile}${ord}`;
+                          }
+                          return formatStatValue(value, col.format);
                         })();
 
                         return (
@@ -442,11 +451,7 @@ export function PlayerStatsTable({
                             style={pctColor ? { backgroundColor: pctColor.bg, color: pctColor.text } : undefined}
                             title={tooltip}
                           >
-                            {showNA ? (
-                              <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
-                            ) : (
-                              formatStatValue(value, col.format)
-                            )}
+                            {displayValue}
                           </td>
                         );
                       })
