@@ -96,12 +96,9 @@ export const PITCHING_STATS: Record<StatCategory, StatColumn[]> = {
   ],
   statcast: [
     { key: 'IP', label: 'IP', format: 'decimal1' },
-    { key: 'Velo', label: 'Velo', format: 'decimal1' },
     { key: 'maxVelo', label: 'Max Velo', format: 'decimal1' },
-    { key: 'SpinRate', label: 'Spin', format: 'int' },
     { key: 'Extension', label: 'Ext', format: 'decimal1' },
     { key: 'Whiff%', label: 'Whiff%', format: 'percent' },
-    { key: 'CSW%', label: 'CSW%', format: 'percent' },
     { key: 'GB%', label: 'GB%', format: 'percent' },
     { key: 'FB%', label: 'FB%', format: 'percent' },
     { key: 'LD%', label: 'LD%', format: 'percent' },

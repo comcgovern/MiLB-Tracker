@@ -276,7 +276,7 @@ def aggregate_batter_statcast(records: list[dict]) -> dict:
             batted_balls.append({
                 'ev': ev,
                 'la': la,
-                'barrel': rec.get('barrel', '0') == '1',
+                'barrel': str(rec.get('barrel', '0')) == '1',
                 'bb_type': rec.get('bb_type', ''),
                 'xba': safe_float(rec.get('estimated_ba_using_speedangle')),
                 'xslg': safe_float(rec.get('estimated_slg_using_speedangle')),

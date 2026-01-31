@@ -378,11 +378,16 @@ export function StatsTable() {
       // Create a row for each level
       for (const level of levels) {
         const levelStats = getStatsForLevel(playerStats, level, statType);
+        // Only assign statcast data if it matches this level (avoid fill-down across levels)
+        const statcastLevel = playerStats?.statcast?.level;
+        const levelStatcast = (!statcastLevel || statcastLevel === level)
+          ? playerStats?.statcast
+          : undefined;
         const row: PlayerRowWithLevel = {
           teamPlayer: tp,
           player,
           stats: levelStats,
-          statcast: playerStats?.statcast,
+          statcast: levelStatcast,
           level,
           isTotal: false,
         };
