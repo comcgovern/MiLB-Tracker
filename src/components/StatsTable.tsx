@@ -265,6 +265,7 @@ export function StatsTable() {
     statcast?: PlayerStatsData['statcast'];
     level?: MiLBLevel;  // undefined means it's a single-level player
     isTotal?: boolean;  // true for the MiLB total row
+    playerStatsData?: PlayerStatsData;  // Full stats data for splits access
   }
 
   const batters: PlayerRowWithLevel[] = [];
@@ -390,6 +391,7 @@ export function StatsTable() {
           statcast: levelStatcast,
           level,
           isTotal: false,
+          playerStatsData: playerStats,
         };
 
         if (isPitcher && !isBatter) {
@@ -425,6 +427,7 @@ export function StatsTable() {
         statcast: playerStats?.statcast,
         level: 'MiLB',
         isTotal: true,
+        playerStatsData: playerStats,
       };
 
       if (isPitcher && !isBatter) {
@@ -463,6 +466,7 @@ export function StatsTable() {
         statcast: playerStats?.statcast,
         level: displayLevel,
         isTotal: false,
+        playerStatsData: playerStats,
       };
 
       if (isPitcher && !isBatter) {

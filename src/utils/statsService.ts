@@ -568,6 +568,39 @@ function mergeStatcast(
   };
 }
 
+// Merge splits (battingSplits / pitchingSplits) from multiple months
+// Handedness splits (vsL, vsR) are aggregated; time-based splits (yesterday, today, last7, etc.)
+// use the most recent month's values since they're recomputed each run.
+function mergeSplits<T extends BattingStats | PitchingStats>(
+  a: PlayerStatsData['battingSplits'] | PlayerStatsData['pitchingSplits'] | undefined,
+  b: PlayerStatsData['battingSplits'] | PlayerStatsData['pitchingSplits'] | undefined,
+  aggregator: (stats: T[]) => T | undefined
+): typeof a {
+  if (!a && !b) return undefined;
+  if (!a) return b;
+  if (!b) return a;
+
+  const result: Record<string, any> = {};
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+
+  // Keys that should be aggregated across months (cumulative splits from PBP)
+  const aggregateKeys = new Set(['vsL', 'vsR']);
+
+  for (const key of allKeys) {
+    const aVal = (a as Record<string, any>)[key] as T | undefined;
+    const bVal = (b as Record<string, any>)[key] as T | undefined;
+
+    if (aggregateKeys.has(key) && aVal && bVal) {
+      result[key] = aggregator([aVal, bVal]);
+    } else {
+      // For time-based splits, prefer the newer value (b comes later in merge order)
+      result[key] = bVal || aVal;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result as typeof a : undefined;
+}
+
 // Merge player stats from multiple months
 function mergePlayerStats(existing: PlayerStatsData | undefined, newStats: PlayerStatsData): PlayerStatsData {
   if (!existing) return newStats;
@@ -587,6 +620,7 @@ function mergePlayerStats(existing: PlayerStatsData | undefined, newStats: Playe
       newStats.battingByLevel,
       aggregateBattingFromMonthly
     ),
+    battingSplits: mergeSplits(existing.battingSplits, newStats.battingSplits, aggregateBattingFromMonthly),
     battingGameLog: mergeGameLogs(existing.battingGameLog, newStats.battingGameLog),
 
     // Merge pitching data
@@ -598,6 +632,7 @@ function mergePlayerStats(existing: PlayerStatsData | undefined, newStats: Playe
       newStats.pitchingByLevel,
       aggregatePitchingFromMonthly
     ),
+    pitchingSplits: mergeSplits(existing.pitchingSplits, newStats.pitchingSplits, aggregatePitchingFromMonthly),
     pitchingGameLog: mergeGameLogs(existing.pitchingGameLog, newStats.pitchingGameLog),
 
     // Merge statcast data
