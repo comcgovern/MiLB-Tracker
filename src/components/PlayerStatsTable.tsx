@@ -1,5 +1,5 @@
 // components/PlayerStatsTable.tsx
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { StatCategoryToggle } from './StatCategoryToggle';
 import { ArsenalTable } from './ArsenalTable';
 import {
@@ -52,8 +52,21 @@ export function PlayerStatsTable({
   const [viewMode, setViewMode] = useState<StatsViewMode>('standard');
   const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
   const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
+  const [activeTooltip, setActiveTooltip] = useState<{ key: string; text: string; rect: DOMRect } | null>(null);
   const dragCounter = useRef(0);
+  const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>();
   const { percentiles } = usePercentiles();
+
+  // Tooltip handlers that work on both desktop (hover) and mobile (tap)
+  const showTooltip = useCallback((key: string, text: string, target: HTMLElement) => {
+    clearTimeout(tooltipTimeout.current);
+    const rect = target.getBoundingClientRect();
+    setActiveTooltip({ key, text, rect });
+  }, []);
+
+  const hideTooltip = useCallback(() => {
+    tooltipTimeout.current = setTimeout(() => setActiveTooltip(null), 150);
+  }, []);
 
   // Check if any player in this table has Statcast data
   const anyHasStatcast = players.some((p) => p.player?.hasStatcast);
@@ -220,6 +233,23 @@ export function PlayerStatsTable({
           />
         </div>
       </div>
+
+      {/* Floating tooltip for mobile + desktop */}
+      {activeTooltip && (
+        <div
+          className="fixed z-50 px-2.5 py-1.5 text-xs font-medium text-white bg-gray-900 dark:bg-gray-700 rounded-md shadow-lg pointer-events-none"
+          style={{
+            left: activeTooltip.rect.left + activeTooltip.rect.width / 2,
+            top: activeTooltip.rect.top - 8,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          {activeTooltip.text}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-700"
+          />
+        </div>
+      )}
 
       {/* Table with horizontal scroll for stats */}
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -419,34 +449,59 @@ export function PlayerStatsTable({
                           ? getPercentileColor(pctile, col.key, type === 'batter' ? 'batting' : 'pitching')
                           : undefined;
 
-                        // Build tooltip
-                        const tooltip = (() => {
+                        // Build tooltip text
+                        const tooltipText = (() => {
                           if (pctile !== undefined) {
-                            const ord = pctile === 1 || pctile % 10 === 1 && pctile !== 11 ? 'st'
-                              : pctile === 2 || pctile % 10 === 2 && pctile !== 12 ? 'nd'
-                              : pctile === 3 || pctile % 10 === 3 && pctile !== 13 ? 'rd' : 'th';
-                            return `${pctile}${ord} percentile at ${playerLevel}`;
+                            // In percentile view, tooltip shows the raw stat value
+                            return `${col.label}: ${formatStatValue(value, col.format)}`;
                           }
                           if ((viewMode === 'vsL' || viewMode === 'vsR') && value !== undefined) {
-                            const hand = viewMode === 'vsL' ? 'L' : 'R';
-                            const formatted = formatStatValue(value, col.format);
-                            return `${formatted} vs ${hand}`;
+                            // Show the OPPOSITE split in the tooltip
+                            const oppositeKey = viewMode === 'vsL' ? 'vsR' : 'vsL';
+                            const oppositeHand = viewMode === 'vsL' ? 'R' : 'L';
+                            if (playerStatsData) {
+                              const splits = type === 'batter' ? playerStatsData.battingSplits : playerStatsData.pitchingSplits;
+                              const oppositeStats = (splits as Record<string, any>)?.[oppositeKey];
+                              const oppositeValue = oppositeStats?.[col.key as keyof typeof oppositeStats] as number | undefined;
+                              if (oppositeValue !== undefined) {
+                                return `vs ${oppositeHand}: ${formatStatValue(oppositeValue, col.format)}`;
+                              }
+                            }
+                            return `vs ${oppositeHand}: --`;
                           }
                           return undefined;
+                        })();
+                        const tooltipKey = `${teamPlayer.id}-${level}-${col.key}`;
+
+                        // In percentile view, show the percentile number in the cell
+                        const displayValue = (() => {
+                          if (showNA) return <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>;
+                          if (viewMode === 'percentile' && pctile !== undefined) {
+                            const ord = (pctile % 10 === 1 && pctile % 100 !== 11) ? 'st'
+                              : (pctile % 10 === 2 && pctile % 100 !== 12) ? 'nd'
+                              : (pctile % 10 === 3 && pctile % 100 !== 13) ? 'rd' : 'th';
+                            return `${pctile}${ord}`;
+                          }
+                          return formatStatValue(value, col.format);
                         })();
 
                         return (
                           <td
                             key={col.key}
-                            className={`px-3 py-2 whitespace-nowrap text-sm text-right ${!pctColor ? (isTotal ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-900 dark:text-white') : ''}`}
+                            className={`px-3 py-2 whitespace-nowrap text-sm text-right ${!pctColor ? (isTotal ? 'text-gray-900 dark:text-white font-medium' : 'text-gray-900 dark:text-white') : ''} ${tooltipText ? 'cursor-default' : ''}`}
                             style={pctColor ? { backgroundColor: pctColor.bg, color: pctColor.text } : undefined}
-                            title={tooltip}
+                            onMouseEnter={tooltipText ? (e) => showTooltip(tooltipKey, tooltipText, e.currentTarget) : undefined}
+                            onMouseLeave={tooltipText ? hideTooltip : undefined}
+                            onClick={tooltipText ? (e) => {
+                              // Toggle on tap for mobile
+                              if (activeTooltip?.key === tooltipKey) {
+                                setActiveTooltip(null);
+                              } else {
+                                showTooltip(tooltipKey, tooltipText, e.currentTarget);
+                              }
+                            } : undefined}
                           >
-                            {showNA ? (
-                              <span className="text-gray-400 dark:text-gray-500 italic">N/A</span>
-                            ) : (
-                              formatStatValue(value, col.format)
-                            )}
+                            {displayValue}
                           </td>
                         );
                       })
